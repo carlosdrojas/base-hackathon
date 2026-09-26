@@ -54,7 +54,7 @@ function renderDifferentials(): string {
           <span class="mono" style="color:#6B6A64;">${d.conf}%</span>
         </div>
         <div style="height:6px;background:#EFEDE7;border-radius:3px;">
-          <div style="height:6px;background:${d.primary ? "#2F6FED" : "#C9C6BD"};border-radius:3px;width:${d.conf}%;"></div>
+          <div style="height:6px;background:${d.primary ? "#292826" : "#C9C6BD"};border-radius:3px;width:${d.conf}%;"></div>
         </div>
       </div>`
     )
@@ -73,10 +73,29 @@ const overrideOptions = [
   { value: "unknown", label: "unknown" },
 ];
 
-const notes = [
-  { author: "M. Alvarez", role: "Engineer", time: "2026-09-25 09:20", text: "Second bus-off cluster this month on this site — check if the J3 harness batch is flagged." },
-  { author: "D. Osei", role: "Technician", time: "2026-09-24 16:05", text: "Prior visit incomplete — needed a second tech for panel access. Rescheduled for 09-26." },
+// Merged, chronologically-ordered feed of system CaseEvents and human notes —
+// previously two separate tabs (Timeline + Notes). One shared thread so the
+// system's own record and what engineers/technicians said about it read as
+// a single story instead of requiring a reader to cross-reference two tabs.
+const caseThread: { time: string; actor: string; label: string }[] = [
+  { time: "09-24 16:05", actor: "TECHNICIAN", label: "D. Osei: Prior visit incomplete — needed a second tech for panel access. Rescheduled for 09-26." },
+  { time: "09:14", actor: "DETECTOR", label: "CAN drop 14% (threshold 12%) — bus-off events x3" },
+  { time: "09:15", actor: "AGENT", label: "Hypothesis posted — can_link_unreliable (0.81 confidence)" },
+  { time: "09:16", actor: "SYSTEM", label: "Policy gate — L2, human approval required before execution" },
+  { time: "09:20", actor: "ENGINEER", label: "M. Alvarez: Second bus-off cluster this month on this site — check if the J3 harness batch is flagged." },
 ];
+
+function renderCaseThread(): string {
+  return caseThread
+    .map(
+      (e) => `<div style="display: flex; gap: 14px; padding: 8px 0; border-top: 1px solid #F0EEE9;">
+          <span class="mono" style="width: 84px; flex-shrink: 0; font-size: 13px; color: #8A8880; padding-top: 2px;">${e.time}</span>
+          <span style="width: 96px; flex-shrink: 0; font-size: 13px; font-weight: 600; color: #4A4944; padding-top: 2px;">${e.actor}</span>
+          <span style="font-size: 16px; color: #292826;">${e.label}</span>
+        </div>`
+    )
+    .join("");
+}
 
 export const CASE_WORKSPACE_PAGE = `<!doctype html>
 <html lang="en">
@@ -87,8 +106,8 @@ export const CASE_WORKSPACE_PAGE = `<!doctype html>
 <style>
   html { scroll-behavior: smooth; }
   body { margin: 0; background: #F0EEEB; font-family: 'Space Grotesk', system-ui, sans-serif; color: #292826; }
-  a { color: #2F6FED; }
-  a:hover { color: #1E4FBE; }
+  a { color: #1E4D2B; }
+  a:hover { color: #163A20; }
   .mono { font-family: 'Space Mono', monospace; }
   ::selection { background: #D6F0B4; }
   .navTab { color: #FFFFFF; }
@@ -115,11 +134,10 @@ export const CASE_WORKSPACE_PAGE = `<!doctype html>
     <!-- SECTION NAV (jump links, one-pager) -->
     <div style="display: flex; gap: 2px; overflow-x: auto; background: #1E4D2B; margin: 0 -40px; padding: 0 40px;">
       <a href="#diagnosis" class="navTab" style="font-weight: 500; font-size: 15px; padding: 10px 14px; text-decoration: none; white-space: nowrap;">Diagnosis</a>
-      <a href="#timeline" class="navTab" style="font-weight: 500; font-size: 15px; padding: 10px 14px; text-decoration: none; white-space: nowrap;">Timeline</a>
+      <a href="#timeline" class="navTab" style="font-weight: 500; font-size: 15px; padding: 10px 14px; text-decoration: none; white-space: nowrap;">Timeline &amp; Notes</a>
       <a href="#evidence" class="navTab" style="font-weight: 500; font-size: 15px; padding: 10px 14px; text-decoration: none; white-space: nowrap;">Evidence viewer</a>
       <a href="#hypothesis" class="navTab" style="font-weight: 500; font-size: 15px; padding: 10px 14px; text-decoration: none; white-space: nowrap;">Hypothesis panel</a>
       <a href="#action" class="navTab" style="font-weight: 500; font-size: 15px; padding: 10px 14px; text-decoration: none; white-space: nowrap;">Action</a>
-      <a href="#notes" class="navTab" style="font-weight: 500; font-size: 15px; padding: 10px 14px; text-decoration: none; white-space: nowrap;">Notes</a>
       <a href="#other" class="navTab" style="font-weight: 500; font-size: 15px; padding: 10px 14px; text-decoration: none; white-space: nowrap;">Other information</a>
     </div>
   </div>
@@ -201,7 +219,7 @@ export const CASE_WORKSPACE_PAGE = `<!doctype html>
               <div style="font-size: 17px;"><span class="mono" style="font-weight: 600;">reboot_firmware</span> <span style="color: #6B6A64;">&middot; confidence 0.81 &middot; role required: ops</span></div>
               <div style="margin-top: 6px; font-size: 14px; font-weight: 600;"><span id="actionStatusLabelDiagnosis" style="color: #9A5B00;">Awaiting ops approval</span></div>
             </div>
-            <a href="#action" style="background: #2F6FED; color: #FFFFFF; border-radius: 6px; padding: 10px 16px; font-size: 15px; font-weight: 700; white-space: nowrap; text-decoration: none; display: inline-block;">Review in Action &rarr;</a>
+            <a href="#action" style="background: #1E4D2B; color: #FFFFFF; border-radius: 6px; padding: 10px 16px; font-size: 15px; font-weight: 700; white-space: nowrap; text-decoration: none; display: inline-block;">Review in Action &rarr;</a>
           </div>
         </div>
 
@@ -210,32 +228,14 @@ export const CASE_WORKSPACE_PAGE = `<!doctype html>
       </div>
     </div>
 
-    <!-- TIMELINE -->
+    <!-- TIMELINE & NOTES (merged: system CaseEvents + human notes, one thread) -->
     <div id="timeline" style="scroll-margin-top: 16px; margin-bottom: 48px;">
+      <div style="font-size: 22px; font-weight: 600; margin-bottom: 16px;">Timeline &amp; Notes</div>
       <div style="background: #FFFFFF; border: 1px solid #DEDAD2; border-radius: 8px; padding: 20px 24px;">
-        <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 14px;">
-          <span style="font-size: 15px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; color: #6B6A64;">Timeline</span>
-          <button onclick="toggleInfo('timelineInfo')" aria-label="Where does this come from?" style="background: none; border: 1px solid #2F6FED; border-radius: 50%; width: 16px; height: 16px; font-size: 13px; line-height: 1; color: #2F6FED; cursor: pointer; padding: 0;">&#9432;</button>
-        </div>
-        <div id="timelineInfo" hidden style="margin-bottom: 14px; padding: 12px 14px; background: #F0EEEB; border-radius: 6px; font-size: 14px; color: #333230; line-height: 1.6;">Built from immutable CaseEvents, logged automatically by detectors, the agent, and human actions (approve/reject, notes, visits) &mdash; nothing here is editable after the fact.</div>
+        ${renderCaseThread()}
         <div style="display: flex; gap: 14px; padding: 8px 0; border-top: 1px solid #F0EEE9;">
-          <span class="mono" style="width: 44px; flex-shrink: 0; font-size: 14px; color: #8A8880; padding-top: 2px;">09:14</span>
-          <span style="width: 76px; flex-shrink: 0; font-size: 13px; font-weight: 600; color: #4A4944; padding-top: 2px;">DETECTOR</span>
-          <span style="font-size: 16px; color: #292826;">CAN drop 14% (threshold 12%) &mdash; bus-off events x3</span>
-        </div>
-        <div style="display: flex; gap: 14px; padding: 8px 0; border-top: 1px solid #F0EEE9;">
-          <span class="mono" style="width: 44px; flex-shrink: 0; font-size: 14px; color: #8A8880; padding-top: 2px;">09:15</span>
-          <span style="width: 76px; flex-shrink: 0; font-size: 13px; font-weight: 600; color: #4A4944; padding-top: 2px;">AGENT</span>
-          <span style="font-size: 16px; color: #292826;">Hypothesis posted &mdash; can_link_unreliable (0.81 confidence)</span>
-        </div>
-        <div style="display: flex; gap: 14px; padding: 8px 0; border-top: 1px solid #F0EEE9;">
-          <span class="mono" style="width: 44px; flex-shrink: 0; font-size: 14px; color: #8A8880; padding-top: 2px;">09:16</span>
-          <span style="width: 76px; flex-shrink: 0; font-size: 13px; font-weight: 600; color: #4A4944; padding-top: 2px;">SYSTEM</span>
-          <span style="font-size: 16px; color: #292826;">Policy gate &mdash; L2, human approval required before execution</span>
-        </div>
-        <div style="display: flex; gap: 14px; padding: 8px 0; border-top: 1px solid #F0EEE9;">
-          <span class="mono" id="timelineFinalTime" style="width: 44px; flex-shrink: 0; font-size: 14px; color: #8A8880; padding-top: 2px;">&mdash;</span>
-          <span style="width: 76px; flex-shrink: 0; font-size: 13px; font-weight: 600; color: #4A4944; padding-top: 2px;" id="timelineFinalActor">PENDING</span>
+          <span class="mono" id="timelineFinalTime" style="width: 84px; flex-shrink: 0; font-size: 13px; color: #8A8880; padding-top: 2px;">&mdash;</span>
+          <span style="width: 96px; flex-shrink: 0; font-size: 13px; font-weight: 600; color: #4A4944; padding-top: 2px;" id="timelineFinalActor">PENDING</span>
           <span style="font-size: 16px; color: #292826;" id="timelineFinalLabel">Awaiting ops approval on reboot_firmware</span>
         </div>
       </div>
@@ -351,8 +351,8 @@ export const CASE_WORKSPACE_PAGE = `<!doctype html>
           <div class="mono" style="font-size: 18px; font-weight: 600;">reboot_firmware</div>
           <div style="font-size: 15px; color: #6B6A64; margin: 4px 0 16px;">confidence 0.81 &middot; role required: ops</div>
           <div style="display: flex; gap: 8px; max-width: 320px;">
-            <button id="approveBtn" onclick="decideAction('approved')" style="flex: 1; background: #B2DD79; color: #1E4D2B; border: none; border-radius: 6px; padding: 10px 0; font-size: 15px; font-weight: 700; cursor: pointer;">Approve</button>
-            <button id="rejectBtn" onclick="decideAction('rejected')" style="flex: 1; background: #FFFFFF; color: #B42318; border: 1px solid #E9B2AC; border-radius: 6px; padding: 10px 0; font-size: 15px; font-weight: 600; cursor: pointer;">Reject</button>
+            <button id="approveBtn" onclick="decideAction('approved')" style="flex: 1; background: #1E4D2B; color: #FFFFFF; border: none; border-radius: 6px; padding: 10px 0; font-size: 15px; font-weight: 700; cursor: pointer;">Approve</button>
+            <button id="rejectBtn" onclick="decideAction('rejected')" style="flex: 1; background: #FFFFFF; color: #DC2626; border: 1px solid #F0B4B4; border-radius: 6px; padding: 10px 0; font-size: 15px; font-weight: 600; cursor: pointer;">Reject</button>
           </div>
           <div style="margin-top: 12px; font-size: 15px; font-weight: 600;"><span id="actionStatusLabelAction" style="color: #9A5B00;">Awaiting ops approval</span></div>
 
@@ -363,22 +363,6 @@ export const CASE_WORKSPACE_PAGE = `<!doctype html>
             <div style="font-size: 14px; color: #8A8880; margin-top: 10px;">Engineer signature only &middot; resolve the recommended action above first.</div>
           </div>
         </div>
-      </div>
-    </div>
-
-    <!-- NOTES -->
-    <div id="notes" style="scroll-margin-top: 16px; margin-bottom: 48px;">
-      <div style="background: #FFFFFF; border: 1px solid #DEDAD2; border-radius: 8px; padding: 20px 24px;">
-        <div style="font-size: 15px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; color: #6B6A64; margin-bottom: 14px;">Notes</div>
-        ${notes
-          .map(
-            (n) => `<div style="margin-bottom: 14px; padding-bottom: 14px; border-bottom: 1px solid #F0EEE9;">
-          <div style="font-size: 15px; font-weight: 600;">${n.author} <span style="color: #8A8880; font-weight: 400;">&middot; ${n.role}</span></div>
-          <div style="font-size: 13px; color: #8A8880; margin: 2px 0 6px;">${n.time}</div>
-          <div style="font-size: 16px; color: #333230; line-height: 1.5;">${n.text}</div>
-        </div>`
-          )
-          .join("")}
       </div>
     </div>
 
@@ -458,13 +442,13 @@ function decideAction(state) {
   let label, color;
   if (state === 'approved') {
     label = 'Approved — executed';
-    color = '#1D6F3E';
+    color = '#1E4D2B';
     document.getElementById('timelineFinalTime').textContent = 'now';
     document.getElementById('timelineFinalActor').textContent = 'OPS';
     document.getElementById('timelineFinalLabel').textContent = 'Approved — reboot_firmware executed, post-check scheduled in 15 min';
   } else {
     label = 'Rejected — escalated to engineer';
-    color = '#B42318';
+    color = '#DC2626';
     document.getElementById('timelineFinalTime').textContent = 'now';
     document.getElementById('timelineFinalActor').textContent = 'OPS';
     document.getElementById('timelineFinalLabel').textContent = 'Rejected — case escalated for engineer review';
@@ -477,9 +461,9 @@ function decideAction(state) {
 
   const signBtn = document.getElementById('signBtn');
   signBtn.disabled = false;
-  signBtn.style.background = '#B2DD79';
-  signBtn.style.color = '#1E4D2B';
-  signBtn.style.borderColor = '#B2DD79';
+  signBtn.style.background = '#1E4D2B';
+  signBtn.style.color = '#FFFFFF';
+  signBtn.style.borderColor = '#1E4D2B';
   signBtn.style.cursor = 'pointer';
 }
 </script>

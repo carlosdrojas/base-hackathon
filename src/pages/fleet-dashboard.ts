@@ -106,7 +106,7 @@ function renderTrend(): string {
       const weeksAgo = n - 1 - i;
       const label = weeksAgo === 0 ? "now" : `${weeksAgo} week${weeksAgo === 1 ? "" : "s"} ago`;
       return `<circle cx="${p.x}" cy="${p.y}" r="6" fill="#FFFFFF"></circle>
-      <circle cx="${p.x}" cy="${p.y}" r="4" fill="#2F6FED"><title>${label}: ${p.v}% false-pull rate</title></circle>`;
+      <circle cx="${p.x}" cy="${p.y}" r="4" fill="#1E4D2B"><title>${label}: ${p.v}% false-pull rate</title></circle>`;
     })
     .join("");
 
@@ -120,7 +120,7 @@ function renderTrend(): string {
 
   return `<svg viewBox="0 0 ${width} ${height}" style="width:100%;height:${height}px;overflow:visible;">
     ${gridLines}
-    <polyline points="${linePoints}" fill="none" stroke="#2F6FED" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></polyline>
+    <polyline points="${linePoints}" fill="none" stroke="#1E4D2B" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></polyline>
     ${dots}
     ${xTicks}
   </svg>`;
@@ -171,8 +171,8 @@ export const FLEET_DASHBOARD_PAGE = `<!doctype html>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Space+Mono:wght@400;500&display=swap">
 <style>
   body { margin: 0; background: #F0EEEB; font-family: 'Space Grotesk', system-ui, sans-serif; color: #292826; }
-  a { color: #2F6FED; }
-  a:hover { color: #1E4FBE; }
+  a { color: #1E4D2B; }
+  a:hover { color: #163A20; }
   .mono { font-family: 'Space Mono', monospace; }
   .caseRow:hover { background: #FAFAF8; }
   .tip { position: relative; display: inline-flex; align-items: center; justify-content: center; width: 14px; height: 14px; border: 1px solid #2F6FED; border-radius: 50%; font-size: 10px; line-height: 1; color: #2F6FED; cursor: help; margin-left: 5px; }
