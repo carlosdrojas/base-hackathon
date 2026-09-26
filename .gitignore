@@ -1,9 +1,4 @@
 node_modules
 .env
 dist
-cache
-artifacts
-typechain-types
-types
-ignition/deployments
 .DS_Store
