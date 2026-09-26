@@ -18,12 +18,15 @@ North star: stop healthy hardware from being pulled to HQ (~90% of returned inve
 
 3. **Software features**  
    https://app.notion.com/p/3e7e26707bba819aa480e2acde0fb6ce  
-   Feature list and roles (engineer-only OTA / RCA close). Not architecture.
+   Feature list and roles (engineer-only OTA / RCA close). Not architecture.  
+   Local copy: `docs/field-rca/software-features.md`
 
 4. **Software structure**  
    https://app.notion.com/p/3e7e26707bba8125a38bfb302bc8022b  
    Pipeline + block diagram for this build:  
-   `faulted inverter CSV → RCA ticket + telemetry packet → triaging agent (debug + gameplan) → dashboard (map + tickets + analysis)`.
+   `faulted inverter CSV → RCA ticket + telemetry packet → triaging agent (debug + gameplan) → dashboard (map + tickets + analysis)`.  
+   Also: CSV contract, telemetry packet, **Telemetry → Events** layer (detectors, Event schema, fixtures, implementation order).  
+   Local copy: `docs/field-rca/software-structure.md`
 
 ## Hard constraints (all agents)
 

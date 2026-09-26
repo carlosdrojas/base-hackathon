@@ -1,0 +1,299 @@
+{
+  "_note": "MOCKED fleet for the Response Agent demo. Not Base data. Runtime copy lives in data/runtime/sim-fleet.json.",
+  "fw_allowlist": [
+    "3.4.0"
+  ],
+  "misdiagnose": {
+    "INV-5005": {
+      "root_cause": "fw_soft_fault_reboot_candidate",
+      "confidence": 0.62,
+      "why": "Planted misdiagnosis: looks like a soft FW fault, is really a loose CAN connector. Reboot fails, verifier escalates."
+    }
+  },
+  "users": [
+    {
+      "id": "u-osei",
+      "name": "D. Osei",
+      "role": "technician"
+    },
+    {
+      "id": "u-fenwick",
+      "name": "R. Fenwick",
+      "role": "technician"
+    },
+    {
+      "id": "u-nguyen",
+      "name": "K. Nguyen",
+      "role": "technician"
+    },
+    {
+      "id": "u-alvarez",
+      "name": "M. Alvarez",
+      "role": "ops"
+    },
+    {
+      "id": "u-park",
+      "name": "J. Park",
+      "role": "engineer"
+    },
+    {
+      "id": "u-admin",
+      "name": "Admin",
+      "role": "admin"
+    }
+  ],
+  "tech_roster": [
+    {
+      "user_id": "u-osei",
+      "skills": [
+        "can_link_unreliable",
+        "install_wiring_or_sense_error",
+        "no_fault_found"
+      ],
+      "zone": "south"
+    },
+    {
+      "user_id": "u-fenwick",
+      "skills": [
+        "thermal_or_safety_event",
+        "true_hardware_defect",
+        "fw_version_mismatch"
+      ],
+      "zone": "north"
+    },
+    {
+      "user_id": "u-nguyen",
+      "skills": [
+        "install_commissioning_incomplete",
+        "grid_or_home_side_condition",
+        "can_link_unreliable"
+      ],
+      "zone": "central"
+    }
+  ],
+  "drivers": [
+    {
+      "id": "u-driver",
+      "name": "T. Brooks (truck)",
+      "role": "technician"
+    }
+  ],
+  "units": [
+    {
+      "vin": "INV-5001",
+      "asset_id": "A-5001",
+      "site": "2104 Wilshire Blvd, Austin TX",
+      "lat": 30.3006,
+      "lng": -97.7137,
+      "hw_rev": "B",
+      "sku": "BASE-INV-11K",
+      "fw_version": "3.4.0",
+      "install_date": "2025-01-01",
+      "crew_id": "CREW-N1",
+      "fault": null,
+      "fault_time": null,
+      "online": true,
+      "uptime_s": 72000,
+      "last_boot_reason": "power_on",
+      "action_history": []
+    },
+    {
+      "vin": "INV-5002",
+      "asset_id": "A-5002",
+      "site": "4410 Avenue F, Austin TX",
+      "lat": 30.3071,
+      "lng": -97.7235,
+      "hw_rev": "C",
+      "sku": "BASE-INV-11K",
+      "fw_version": "3.4.0",
+      "install_date": "2025-02-03",
+      "crew_id": "CREW-S2",
+      "fault": "no_fault_found",
+      "fault_time": "2026-09-26T10:07:00-05:00",
+      "online": true,
+      "uptime_s": 118800,
+      "last_boot_reason": "power_on",
+      "action_history": []
+    },
+    {
+      "vin": "INV-5003",
+      "asset_id": "A-5003",
+      "site": "1807 Kinney Ave, Austin TX",
+      "lat": 30.2521,
+      "lng": -97.7657,
+      "hw_rev": "C",
+      "sku": "BASE-INV-11K",
+      "fw_version": "3.4.0",
+      "install_date": "2025-03-05",
+      "crew_id": "CREW-E3",
+      "fault": "fw_soft_fault_reboot_candidate",
+      "fault_time": "2026-09-26T11:14:00-05:00",
+      "online": true,
+      "uptime_s": 165600,
+      "last_boot_reason": "power_on",
+      "action_history": []
+    },
+    {
+      "vin": "INV-5004",
+      "asset_id": "A-5004",
+      "site": "6203 Shoal Creek Blvd, Austin TX",
+      "lat": 30.3346,
+      "lng": -97.7471,
+      "hw_rev": "B",
+      "sku": "BASE-INV-11K",
+      "fw_version": "3.4.0",
+      "install_date": "2025-04-07",
+      "crew_id": "CREW-N1",
+      "fault": null,
+      "fault_time": null,
+      "online": true,
+      "uptime_s": 212400,
+      "last_boot_reason": "power_on",
+      "action_history": []
+    },
+    {
+      "vin": "INV-5005",
+      "asset_id": "A-5005",
+      "site": "912 Garden Villa Ln, Austin TX",
+      "lat": 30.2308,
+      "lng": -97.7652,
+      "hw_rev": "C",
+      "sku": "BASE-INV-11K",
+      "fw_version": "3.4.0",
+      "install_date": "2025-05-09",
+      "crew_id": "CREW-S2",
+      "fault": "can_link_unreliable",
+      "fault_time": "2026-09-26T13:28:00-05:00",
+      "online": true,
+      "uptime_s": 259200,
+      "last_boot_reason": "power_on",
+      "action_history": []
+    },
+    {
+      "vin": "INV-5006",
+      "asset_id": "A-5006",
+      "site": "3301 Hancock Dr, Austin TX",
+      "lat": 30.324,
+      "lng": -97.7415,
+      "hw_rev": "C",
+      "sku": "BASE-INV-11K",
+      "fw_version": "3.4.0",
+      "install_date": "2025-06-11",
+      "crew_id": "CREW-E3",
+      "fault": null,
+      "fault_time": null,
+      "online": true,
+      "uptime_s": 306000,
+      "last_boot_reason": "power_on",
+      "action_history": []
+    },
+    {
+      "vin": "INV-5007",
+      "asset_id": "A-5007",
+      "site": "7400 Cooper Ln, Austin TX",
+      "lat": 30.1897,
+      "lng": -97.796,
+      "hw_rev": "B",
+      "sku": "BASE-INV-11K",
+      "fw_version": "3.4.0",
+      "install_date": "2025-07-13",
+      "crew_id": "CREW-N1",
+      "fault": "thermal_or_safety_event",
+      "fault_time": "2026-09-26T15:42:00-05:00",
+      "online": true,
+      "uptime_s": 352800,
+      "last_boot_reason": "power_on",
+      "action_history": []
+    },
+    {
+      "vin": "INV-5008",
+      "asset_id": "A-5008",
+      "site": "1500 E 38th 1/2 St, Austin TX",
+      "lat": 30.294,
+      "lng": -97.7195,
+      "hw_rev": "C",
+      "sku": "BASE-INV-11K",
+      "fw_version": "3.2.1",
+      "install_date": "2025-08-15",
+      "crew_id": "CREW-S2",
+      "fault": "fw_version_mismatch",
+      "fault_time": "2026-09-26T16:49:00-05:00",
+      "online": true,
+      "uptime_s": 399600,
+      "last_boot_reason": "power_on",
+      "action_history": []
+    },
+    {
+      "vin": "INV-5009",
+      "asset_id": "A-5009",
+      "site": "2608 Oldfort Hill Dr, Austin TX",
+      "lat": 30.396,
+      "lng": -97.727,
+      "hw_rev": "C",
+      "sku": "BASE-INV-11K",
+      "fw_version": "3.3.0",
+      "install_date": "2025-09-17",
+      "crew_id": "CREW-E3",
+      "fault": "fw_soft_fault_reboot_candidate",
+      "fault_time": "2026-09-26T09:56:00-05:00",
+      "online": true,
+      "uptime_s": 446400,
+      "last_boot_reason": "power_on",
+      "action_history": []
+    },
+    {
+      "vin": "INV-5010",
+      "asset_id": "A-5010",
+      "site": "11700 Jollyville Rd, Austin TX",
+      "lat": 30.415,
+      "lng": -97.747,
+      "hw_rev": "B",
+      "sku": "BASE-INV-11K",
+      "fw_version": "3.3.0",
+      "install_date": "2025-01-19",
+      "crew_id": "CREW-N1",
+      "fault": "fw_soft_fault_reboot_candidate",
+      "fault_time": "2026-09-26T10:03:00-05:00",
+      "online": true,
+      "uptime_s": 493200,
+      "last_boot_reason": "power_on",
+      "action_history": []
+    },
+    {
+      "vin": "INV-5011",
+      "asset_id": "A-5011",
+      "site": "8200 Mesa Dr, Austin TX",
+      "lat": 30.37,
+      "lng": -97.756,
+      "hw_rev": "C",
+      "sku": "BASE-INV-11K",
+      "fw_version": "3.3.0",
+      "install_date": "2025-02-21",
+      "crew_id": "CREW-S2",
+      "fault": "fw_soft_fault_reboot_candidate",
+      "fault_time": "2026-09-26T11:10:00-05:00",
+      "online": true,
+      "uptime_s": 540000,
+      "last_boot_reason": "power_on",
+      "action_history": []
+    },
+    {
+      "vin": "INV-5012",
+      "asset_id": "A-5012",
+      "site": "5607 Clay Ave, Austin TX",
+      "lat": 30.329,
+      "lng": -97.733,
+      "hw_rev": "C",
+      "sku": "BASE-INV-11K",
+      "fw_version": "3.4.0",
+      "install_date": "2025-03-23",
+      "crew_id": "CREW-E3",
+      "fault": "true_hardware_defect",
+      "fault_time": "2026-09-26T12:17:00-05:00",
+      "online": true,
+      "uptime_s": 586800,
+      "last_boot_reason": "power_on",
+      "action_history": []
+    }
+  ]
+}
