@@ -3,6 +3,8 @@
 // for a hackathon demo. Sessions and decisions are lost on server restart.
 import crypto from "node:crypto";
 import type { IncomingMessage } from "node:http";
+import type { CaseStatus } from "./field-rca/index.js";
+export type { CaseStatus };
 
 export type Role = "staff" | "technician";
 export type Decision = "pending" | "approved" | "rejected";
@@ -73,4 +75,15 @@ export function readBody(req: IncomingMessage): Promise<string> {
 
 export function homeFor(role: Role): string {
   return role === "staff" ? "/fleet" : "/technician";
+}
+
+// Real case-lifecycle status (src/field-rca/contracts.ts's CaseStatus, the
+// frozen closed set tied to the design doc) derived from the two booleans we
+// actually track. One place computing this so /case, /fleet, and /technician
+// can't drift into showing three different statuses for the same case.
+export function deriveCaseStatus(decision: Decision, closed: boolean): CaseStatus {
+  if (closed) return "Closed";
+  if (decision === "approved") return "Action in progress";
+  if (decision === "rejected") return "Awaiting engineer review";
+  return "Action pending approval";
 }

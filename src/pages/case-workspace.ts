@@ -39,50 +39,70 @@ function renderTimes(): string {
   return bucketTimes.map((t) => `<span class="mono" style="flex:1;text-align:center;font-size:11px;color:#8A8880;">${t}</span>`).join("");
 }
 
-const differentials = [
-  { value: "can_link_unreliable", label: "can_link_unreliable", conf: 81, primary: true },
-  { value: "fw_soft_fault_reboot_candidate", label: "fw_soft_fault_reboot_candidate", conf: 14, primary: false },
-  { value: "install_commissioning_incomplete", label: "install_commissioning_incomplete", conf: 5, primary: false },
-];
+// Real Task-1 output shape (src/field-rca/contracts.ts's Hypothesis, the
+// frozen contract tied to the design doc — not Carlos's src/response/types.ts,
+// which is a differently-shaped contract for his separate /response engine).
+// Real difference from what this page showed before: the contract gives ONE
+// confidence for the primary root_cause_class; `differentials` is a plain
+// list of alternative classes with no per-item confidence. The old UI's
+// 81%/14%/5% breakdown invented precision the contract doesn't provide —
+// dropped in favor of an honest primary-confidence + plain-alternatives list.
+const hypothesis: Hypothesis = {
+  rootCauseClass: "can_link_unreliable",
+  confidence: 0.81,
+  differentials: ["fw_soft_fault_reboot_candidate", "install_commissioning_incomplete"],
+  evidenceRefs: ["CAN drop 14% (threshold 12%)", "3 bus-off events in spike window", "Efficiency dip to 71% in same bucket"],
+  humanSummary: "Connector J3 suspected not fully mated.",
+};
 
 function renderDifferentials(): string {
-  return differentials
+  const primaryRow = `<div style="margin-bottom:12px;">
+    <div style="display:flex;justify-content:space-between;font-size:15px;margin-bottom:4px;">
+      <span class="mono" style="color:#292826;font-weight:600;">${hypothesis.rootCauseClass}</span>
+      <span class="mono" style="color:#6B6A64;">${Math.round(hypothesis.confidence * 100)}%</span>
+    </div>
+    <div style="height:6px;background:#EFEDE7;border-radius:3px;">
+      <div style="height:6px;background:#292826;border-radius:3px;width:${Math.round(hypothesis.confidence * 100)}%;"></div>
+    </div>
+  </div>`;
+  const altRows = hypothesis.differentials
     .map(
-      (d) => `<div style="margin-bottom:12px;">
-        <div style="display:flex;justify-content:space-between;font-size:15px;margin-bottom:4px;">
-          <span class="mono" style="color:${d.primary ? "#292826" : "#6B6A64"};font-weight:${d.primary ? "600" : "400"};">${d.label}</span>
-          <span class="mono" style="color:#6B6A64;">${d.conf}%</span>
-        </div>
-        <div style="height:6px;background:#EFEDE7;border-radius:3px;">
-          <div style="height:6px;background:${d.primary ? "#292826" : "#C9C6BD"};border-radius:3px;width:${d.conf}%;"></div>
-        </div>
+      (d) => `<div style="display:flex;justify-content:space-between;font-size:15px;margin-bottom:8px;">
+        <span class="mono" style="color:#6B6A64;font-weight:400;">${d}</span>
+        <span style="font-size:13px;color:#8A8880;">differential</span>
       </div>`
     )
     .join("");
+  return primaryRow + altRows;
 }
 
+// ROOT_CAUSE_CLASSES is the frozen closed set (src/field-rca/contracts.ts) —
+// importing it directly instead of hand-listing values means this dropdown
+// can't silently drift from the real taxonomy.
 const overrideOptions = [
   { value: "", label: "No override — accept agent hypothesis" },
-  { value: "fw_version_mismatch", label: "fw_version_mismatch" },
-  { value: "fw_soft_fault_reboot_candidate", label: "fw_soft_fault_reboot_candidate" },
-  { value: "can_link_unreliable", label: "can_link_unreliable" },
-  { value: "install_commissioning_incomplete", label: "install_commissioning_incomplete" },
-  { value: "install_wiring_or_sense_error", label: "install_wiring_or_sense_error" },
-  { value: "true_hardware_defect", label: "true_hardware_defect" },
-  { value: "no_fault_found", label: "no_fault_found" },
-  { value: "unknown", label: "unknown" },
+  ...ROOT_CAUSE_CLASSES.map((value) => ({ value, label: value })),
 ];
 
 // Merged, chronologically-ordered feed of system CaseEvents and human notes —
 // previously two separate tabs (Timeline + Notes). One shared thread so the
 // system's own record and what engineers/technicians said about it read as
 // a single story instead of requiring a reader to cross-reference two tabs.
-export const caseThread: { time: string; actor: string; label: string }[] = [
-  { time: "09-24 16:05", actor: "TECHNICIAN", label: "D. Osei: Prior visit incomplete — needed a second tech for panel access. Rescheduled for 09-26." },
-  { time: "09:14", actor: "DETECTOR", label: "CAN drop 14% (threshold 12%) — bus-off events x3" },
+// `eventType`/`role` are typed against src/field-rca/contracts.ts where a
+// real closed set applies. Only the DETECTOR row is a genuine detector output
+// (EVENT_TYPES is specifically for those); AGENT/SYSTEM rows are case-lifecycle
+// narration with no EventType of their own, left as free-text actor tags.
+export const caseThread: { time: string; actor: string; label: string; eventType?: EventType; role?: FieldRole }[] = [
+  { time: "09-24 16:05", actor: "TECHNICIAN", role: "technician", label: "D. Osei: Prior visit incomplete — needed a second tech for panel access. Rescheduled for 09-26." },
+  // can.error_burst over can.bus_off: the summary is framed as a RATE crossing
+  // a THRESHOLD ("drop 14%... threshold 12%"), which is error_burst's shape
+  // ("error-frame rate above N for >= T seconds"); the "bus-off events x3"
+  // clause is a secondary detail within the same summary, not a separate
+  // bus_off-triggered event in this mock.
+  { time: "09:14", actor: "DETECTOR", eventType: "can.error_burst", label: "CAN drop 14% (threshold 12%) — bus-off events x3" },
   { time: "09:15", actor: "AGENT", label: "Hypothesis posted — can_link_unreliable (0.81 confidence)" },
   { time: "09:16", actor: "SYSTEM", label: "Policy gate — L2, human approval required before execution" },
-  { time: "09:20", actor: "ENGINEER", label: "M. Alvarez: Second bus-off cluster this month on this site — check if the J3 harness batch is flagged." },
+  { time: "09:20", actor: "ENGINEER", role: "engineer", label: "M. Alvarez: Second bus-off cluster this month on this site — check if the J3 harness batch is flagged." },
 ];
 
 export function renderCaseThread(): string {
@@ -98,6 +118,32 @@ export function renderCaseThread(): string {
 }
 
 import type { Decision } from "../session-store.js";
+import { deriveCaseStatus } from "../session-store.js";
+// src/field-rca/contracts.ts is the frozen contract tied to the actual design
+// doc — deliberately NOT src/response/types.ts, which is Carlos's separate,
+// differently-shaped contract for his own /response page + fake-fleet engine
+// ("Owned by teammates (do not build): /fleet, /case, map" — his doc, verbatim).
+import {
+  ROOT_CAUSE_CLASSES,
+  type Hypothesis,
+  type Gameplan,
+  type ActionId,
+  type PermissionLevel,
+  type EventType,
+  type Role as FieldRole,
+} from "../field-rca/index.js";
+
+// Real Task-2 output shape (contracts.ts's Gameplan): one recommended action,
+// not the multi-step planner Carlos's response engine builds — that's his
+// piece, not this page's.
+const gameplan: Gameplan = {
+  recommendedActionId: "reboot_firmware",
+  level: "L2",
+  playbookId: null,
+  alertParties: ["ops"],
+  schedule: null,
+  humanSummary: `confidence ${hypothesis.confidence} · role required: ops`,
+};
 
 export function renderCaseWorkspacePage(decision: Decision, closed: boolean): string {
   const isApproved = decision === "approved";
@@ -111,7 +157,7 @@ export function renderCaseWorkspacePage(decision: Decision, closed: boolean): st
   const approveColor = decided ? "#B0AEA6" : "#FFFFFF";
   const approveCursor = decided ? "default" : "pointer";
 
-  const caseStatusLabel = closed ? "Closed" : "Investigating";
+  const caseStatusLabel = deriveCaseStatus(decision, closed);
   const approvalStatusLabel = closed ? "Closed" : "Open";
 
   const signLabel = closed ? "Signed &amp; Closed &#10003;" : "Sign &amp; Close";
@@ -201,7 +247,7 @@ export function renderCaseWorkspacePage(decision: Decision, closed: boolean): st
             </span>
             <span style="display: flex; align-items: center; gap: 6px; font-size: 16px; font-weight: 600;">
               <span style="width: 8px; height: 8px; border-radius: 50%; background: #CA8A00; display: inline-block;"></span>
-              L2 &middot; Supervised act
+              ${gameplan.level} &middot; Supervised act
             </span>
           </div>
           <div id="severityInfo" hidden style="margin: 2px 0 4px; padding: 14px 16px; background: #F0EEEB; border-radius: 6px; font-size: 14px; color: #333230; line-height: 1.7;">
@@ -245,13 +291,13 @@ export function renderCaseWorkspacePage(decision: Decision, closed: boolean): st
 
         <div style="background: #FFFFFF; border: 1px solid #DEDAD2; border-radius: 8px; padding: 24px;">
           <div style="font-size: 13px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; color: #6B6A64; margin-bottom: 10px;">What we think is wrong</div>
-          <div class="mono" style="font-size: 24px; font-weight: 600;">can_link_unreliable</div>
-          <div style="font-size: 15px; color: #6B6A64; margin-top: 4px;">81% confidence &middot; connector J3 suspected not fully mated (see Evidence viewer &amp; Hypothesis panel)</div>
+          <div class="mono" style="font-size: 24px; font-weight: 600;">${hypothesis.rootCauseClass}</div>
+          <div style="font-size: 15px; color: #6B6A64; margin-top: 4px;">${Math.round(hypothesis.confidence * 100)}% confidence &middot; ${hypothesis.humanSummary} (see Evidence viewer &amp; Hypothesis panel)</div>
 
           <div style="margin-top: 20px; padding-top: 18px; border-top: 1px solid #F0EEE9; display: flex; align-items: center; justify-content: space-between;">
             <div>
               <div style="font-size: 13px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; color: #6B6A64; margin-bottom: 6px;">Recommended next step</div>
-              <div style="font-size: 17px;"><span class="mono" style="font-weight: 600;">reboot_firmware</span> <span style="color: #6B6A64;">&middot; confidence 0.81 &middot; role required: ops</span></div>
+              <div style="font-size: 17px;"><span class="mono" style="font-weight: 600;">${gameplan.recommendedActionId}</span> <span style="color: #6B6A64;">&middot; ${gameplan.humanSummary}</span></div>
               <div style="margin-top: 6px; font-size: 14px; font-weight: 600;"><span id="actionStatusLabelDiagnosis" style="color: ${statusColor};">${statusLabel}</span></div>
             </div>
             <a href="#action" style="background: #1E4D2B; color: #FFFFFF; border-radius: 6px; padding: 10px 16px; font-size: 15px; font-weight: 700; white-space: nowrap; text-decoration: none; display: inline-block;">Review in Action &rarr;</a>
@@ -379,12 +425,12 @@ export function renderCaseWorkspacePage(decision: Decision, closed: boolean): st
       <div style="display: flex; flex-direction: column; gap: 16px; align-items: stretch;">
         <div style="background: #FFFFFF; border: 1px solid #DEDAD2; border-radius: 8px; padding: 20px 24px;">
           <div style="font-size: 13px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; color: #6B6A64;">Current permission level</div>
-          <div style="font-size: 26px; font-weight: 600; margin-top: 4px;">L2 &mdash; Supervised act</div>
+          <div style="font-size: 26px; font-weight: 600; margin-top: 4px;">${gameplan.level} &mdash; Supervised act</div>
         </div>
         <div style="background: #FFFFFF; border: 1px solid #DEDAD2; border-radius: 8px; padding: 20px 24px;">
           <div style="font-size: 13px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; color: #6B6A64; margin-bottom: 10px;">Recommended action</div>
-          <div class="mono" style="font-size: 18px; font-weight: 600;">reboot_firmware</div>
-          <div style="font-size: 15px; color: #6B6A64; margin: 4px 0 16px;">confidence 0.81 &middot; role required: ops</div>
+          <div class="mono" style="font-size: 18px; font-weight: 600;">${gameplan.recommendedActionId}</div>
+          <div style="font-size: 15px; color: #6B6A64; margin: 4px 0 16px;">${gameplan.humanSummary}</div>
           <div style="display: flex; gap: 8px; max-width: 320px;">
             <button id="approveBtn" onclick="decideAction('approved')" ${decided ? "disabled" : ""} style="flex: 1; background: ${approveBg}; color: ${approveColor}; border: none; border-radius: 6px; padding: 10px 0; font-size: 15px; font-weight: 700; cursor: ${approveCursor};">Approve</button>
             <button id="rejectBtn" onclick="decideAction('rejected')" ${decided ? "disabled" : ""} style="flex: 1; background: #FFFFFF; color: #DC2626; border: 1px solid #F0B4B4; border-radius: 6px; padding: 10px 0; font-size: 15px; font-weight: 600; cursor: ${approveCursor};">Reject</button>

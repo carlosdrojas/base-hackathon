@@ -1,6 +1,7 @@
 // Plain HTML/CSS/vanilla-JS port of the Fleet RCA Dashboard Claude Artifact
 // mockup (Field RCA design doc §8.3). See case-workspace.ts for the sibling
 // Case Workspace port and porting notes.
+import { deriveCaseStatus, type Decision } from "../session-store.js";
 
 const rootCauseData = [
   { label: "can_link_unreliable", count: 14, max: 14 },
@@ -164,8 +165,8 @@ function renderFilters(): string {
     .join("");
 }
 
-export function renderFleetDashboardPage(caseClosed: boolean): string {
-  const rows = allCases.map((c) => (c.id === "#1234" && caseClosed ? { ...c, status: "Closed" } : c));
+export function renderFleetDashboardPage(decision: Decision, caseClosed: boolean): string {
+  const rows = allCases.map((c) => (c.id === "#1234" ? { ...c, status: deriveCaseStatus(decision, caseClosed) } : c));
   const openRows = rows.filter((c) => c.status !== "Closed");
   const closedRows = rows.filter((c) => c.status === "Closed");
   return `<!doctype html>
@@ -337,11 +338,11 @@ function filterCases(sev) {
 
 // Staff-facing drill-down from the Technician view table: all appointments
 // (cases) currently assigned to one technician.
-export function renderTechnicianAppointmentsPage(techName: string, caseClosed: boolean): string {
+export function renderTechnicianAppointmentsPage(techName: string, decision: Decision, caseClosed: boolean): string {
   const tech = techs.find((t) => t.name === techName);
   const assigned = allCases
     .filter((c) => c.assignedTech === techName)
-    .map((c) => (c.id === "#1234" && caseClosed ? { ...c, status: "Closed" } : c));
+    .map((c) => (c.id === "#1234" ? { ...c, status: deriveCaseStatus(decision, caseClosed) } : c));
 
   return `<!doctype html>
 <html lang="en">

@@ -146,10 +146,10 @@ const server = http.createServer(async (req, res) => {
     }
     if (pathname === "/fleet/technician") {
       const query = new URLSearchParams(url.split("?")[1] ?? "");
-      html(res, renderTechnicianAppointmentsPage(query.get("name") ?? "", caseClosed.get("1234") ?? false));
+      html(res, renderTechnicianAppointmentsPage(query.get("name") ?? "", caseDecisions.get("1234") ?? "pending", caseClosed.get("1234") ?? false));
       return;
     }
-    html(res, renderFleetDashboardPage(caseClosed.get("1234") ?? false));
+    html(res, renderFleetDashboardPage(caseDecisions.get("1234") ?? "pending", caseClosed.get("1234") ?? false));
     return;
   }
 
@@ -160,7 +160,7 @@ const server = http.createServer(async (req, res) => {
       return;
     }
     if (pathname === "/technician") {
-      html(res, renderTechnicianDashboard(caseClosed.get("1234") ?? false));
+      html(res, renderTechnicianDashboard(caseDecisions.get("1234") ?? "pending", caseClosed.get("1234") ?? false));
       return;
     }
     html(res, renderTechnicianCasePage(caseDecisions.get("1234") ?? "pending", caseClosed.get("1234") ?? false));

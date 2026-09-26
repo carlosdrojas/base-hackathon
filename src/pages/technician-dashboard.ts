@@ -4,7 +4,7 @@
 // or close a case — direction comes from an engineer's decision on /case.
 import { allCases, sevColors, type CaseRow } from "./fleet-dashboard.js";
 import { renderCaseThread } from "./case-workspace.js";
-import type { Decision } from "../session-store.js";
+import { deriveCaseStatus, type Decision } from "../session-store.js";
 
 const HEAD = `<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Space+Mono:wght@400;500&display=swap">
 <style>
@@ -44,8 +44,8 @@ function renderTechCaseRow(c: CaseRow): string {
   </div>`;
 }
 
-export function renderTechnicianDashboard(caseClosed: boolean): string {
-  const cases = allCases.map((c) => (c.id === "#1234" && caseClosed ? { ...c, status: "Closed" } : c));
+export function renderTechnicianDashboard(decision: Decision, caseClosed: boolean): string {
+  const cases = allCases.map((c) => (c.id === "#1234" ? { ...c, status: deriveCaseStatus(decision, caseClosed) } : c));
   const openCases = cases.filter((c) => c.status !== "Closed");
   return `<!doctype html>
 <html lang="en">
@@ -85,7 +85,7 @@ export function renderTechnicianCasePage(decision: Decision, closed: boolean): s
     direction.text += " This case is now closed.";
   }
 
-  const caseStatusLabel = closed ? "Closed" : "Investigating";
+  const caseStatusLabel = deriveCaseStatus(decision, closed);
 
   return `<!doctype html>
 <html lang="en">
