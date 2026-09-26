@@ -18,6 +18,10 @@ import {
   caseClosed,
   type Decision,
 } from "./session-store.js";
+import { createFieldRcaWorkspace } from "./field-rca/index.js";
+
+/** Field RCA auto-triage seam. Not the Issue Router mock fleet below. */
+const fieldRca = createFieldRcaWorkspace();
 
 const LOGO_PATH = path.join(process.cwd(), "public", "base_logo.png");
 const logoBuffer = fs.existsSync(LOGO_PATH) ? fs.readFileSync(LOGO_PATH) : null;
@@ -37,6 +41,12 @@ function html(res: http.ServerResponse, body: string): void {
 const server = http.createServer(async (req, res) => {
   const url = req.url ?? "/";
   const [pathname] = url.split("?");
+
+  if (pathname === "/api/field-rca") {
+    res.writeHead(200, { "Content-Type": "application/json" });
+    res.end(JSON.stringify(fieldRca.describe()));
+    return;
+  }
 
   if (pathname === "/base_logo.png") {
     if (logoBuffer) {
