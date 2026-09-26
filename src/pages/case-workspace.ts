@@ -77,7 +77,7 @@ const overrideOptions = [
 // previously two separate tabs (Timeline + Notes). One shared thread so the
 // system's own record and what engineers/technicians said about it read as
 // a single story instead of requiring a reader to cross-reference two tabs.
-const caseThread: { time: string; actor: string; label: string }[] = [
+export const caseThread: { time: string; actor: string; label: string }[] = [
   { time: "09-24 16:05", actor: "TECHNICIAN", label: "D. Osei: Prior visit incomplete — needed a second tech for panel access. Rescheduled for 09-26." },
   { time: "09:14", actor: "DETECTOR", label: "CAN drop 14% (threshold 12%) — bus-off events x3" },
   { time: "09:15", actor: "AGENT", label: "Hypothesis posted — can_link_unreliable (0.81 confidence)" },
@@ -85,7 +85,7 @@ const caseThread: { time: string; actor: string; label: string }[] = [
   { time: "09:20", actor: "ENGINEER", label: "M. Alvarez: Second bus-off cluster this month on this site — check if the J3 harness batch is flagged." },
 ];
 
-function renderCaseThread(): string {
+export function renderCaseThread(): string {
   return caseThread
     .map(
       (e) => `<div style="display: flex; gap: 14px; padding: 8px 0; border-top: 1px solid #F0EEE9;">
@@ -97,7 +97,39 @@ function renderCaseThread(): string {
     .join("");
 }
 
-export const CASE_WORKSPACE_PAGE = `<!doctype html>
+import type { Decision } from "../session-store.js";
+
+export function renderCaseWorkspacePage(decision: Decision, closed: boolean): string {
+  const isApproved = decision === "approved";
+  const isRejected = decision === "rejected";
+  const decided = isApproved || isRejected;
+
+  const statusLabel = !decided ? "Awaiting ops approval" : isApproved ? "Approved — executed" : "Rejected — escalated to engineer";
+  const statusColor = !decided ? "#9A5B00" : isApproved ? "#1E4D2B" : "#DC2626";
+
+  const approveBg = decided ? "#EFEDE7" : "#1E4D2B";
+  const approveColor = decided ? "#B0AEA6" : "#FFFFFF";
+  const approveCursor = decided ? "default" : "pointer";
+
+  const caseStatusLabel = closed ? "Closed" : "Investigating";
+  const approvalStatusLabel = closed ? "Closed" : "Open";
+
+  const signLabel = closed ? "Signed &amp; Closed &#10003;" : "Sign &amp; Close";
+  const signBg = closed ? "#EAF3E7" : decided ? "#1E4D2B" : "#EFEDE7";
+  const signColor = closed ? "#1E4D2B" : decided ? "#FFFFFF" : "#B0AEA6";
+  const signBorder = closed ? "#EAF3E7" : decided ? "#1E4D2B" : "#D8D5CC";
+  const signCursor = closed ? "default" : decided ? "pointer" : "not-allowed";
+  const signClickable = decided && !closed;
+
+  const timelineFinalTime = decided ? "now" : "&mdash;";
+  const timelineFinalActor = decided ? "OPS" : "PENDING";
+  const timelineFinalLabel = !decided
+    ? "Awaiting ops approval on reboot_firmware"
+    : isApproved
+    ? "Approved — reboot_firmware executed, post-check scheduled in 15 min"
+    : "Rejected — case escalated for engineer review";
+
+  return `<!doctype html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
@@ -120,14 +152,20 @@ export const CASE_WORKSPACE_PAGE = `<!doctype html>
 
   <!-- HEADER -->
   <div id="stickyHeader" style="position: sticky; top: 0; z-index: 10; background: #F0EEEB; padding: 16px 40px 0;">
-    <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 14px;">
-      <img src="/base_logo.png" alt="Base" style="height: 48px; width: auto; display: block;">
-      <span style="width: 1px; height: 24px; background: #C9C6BD; display: inline-block;"></span>
-      <span style="font-size: 15px; color: #6B6A64; font-weight: 400;">Field RCA</span>
-      <span style="flex: 1;"></span>
-      <a href="/fleet" style="font-size: 14px; color: #6B6A64; text-decoration: none;">Fleet</a>
-      <a href="/case" style="font-size: 14px; color: #1E4D2B; font-weight: 600; text-decoration: none; margin-left: 12px;">Case</a>
-      <a href="/response" style="font-size: 14px; color: #6B6A64; text-decoration: none; margin-left: 12px;">Response</a>
+    <div style="display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 14px;">
+      <div style="display: flex; align-items: center; gap: 10px;">
+        <img src="/base_logo.png" alt="Base" style="height: 48px; width: auto; display: block;">
+        <span style="width: 1px; height: 24px; background: #C9C6BD; display: inline-block;"></span>
+        <span style="font-size: 15px; color: #6B6A64; font-weight: 400;">Field RCA</span>
+      </div>
+      <div style="display: flex; align-items: center; gap: 18px;">
+        <nav style="display: flex; gap: 12px;">
+          <a href="/fleet" style="font-size: 14px; color: #6B6A64; text-decoration: none;">Fleet</a>
+          <a href="/case" style="font-size: 14px; color: #1E4D2B; font-weight: 600; text-decoration: none;">Case</a>
+          <a href="/response" style="font-size: 14px; color: #6B6A64; text-decoration: none;">Response</a>
+        </nav>
+        <div style="font-size: 13px; color: #8A8880;">Logged in as <strong style="color: #4A4944;">Staff</strong> &middot; <a href="/logout" style="color: #6B6A64;">Logout</a></div>
+      </div>
     </div>
     <a href="/fleet" style="font-size: 15px; color: #6B6A64; text-decoration: none;">&larr; Open cases</a>
     <div style="display: flex; align-items: baseline; gap: 12px; margin-top: 6px; padding-bottom: 14px;">
@@ -160,7 +198,7 @@ export const CASE_WORKSPACE_PAGE = `<!doctype html>
 
           <div style="display: flex; align-items: center; justify-content: space-between; padding: 9px 0; border-top: 1px solid #F0EEE9;">
             <span style="font-size: 15px; color: #6B6A64;">Status</span>
-            <span style="font-size: 16px; font-weight: 600;">Investigating</span>
+            <span id="caseStatusDiagnosis" style="font-size: 16px; font-weight: 600;">${caseStatusLabel}</span>
           </div>
 
           <div style="display: flex; align-items: center; justify-content: space-between; padding: 9px 0; border-top: 1px solid #F0EEE9;">
@@ -221,7 +259,7 @@ export const CASE_WORKSPACE_PAGE = `<!doctype html>
             <div>
               <div style="font-size: 13px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; color: #6B6A64; margin-bottom: 6px;">Recommended next step</div>
               <div style="font-size: 17px;"><span class="mono" style="font-weight: 600;">reboot_firmware</span> <span style="color: #6B6A64;">&middot; confidence 0.81 &middot; role required: ops</span></div>
-              <div style="margin-top: 6px; font-size: 14px; font-weight: 600;"><span id="actionStatusLabelDiagnosis" style="color: #9A5B00;">Awaiting ops approval</span></div>
+              <div style="margin-top: 6px; font-size: 14px; font-weight: 600;"><span id="actionStatusLabelDiagnosis" style="color: ${statusColor};">${statusLabel}</span></div>
             </div>
             <a href="#action" style="background: #1E4D2B; color: #FFFFFF; border-radius: 6px; padding: 10px 16px; font-size: 15px; font-weight: 700; white-space: nowrap; text-decoration: none; display: inline-block;">Review in Action &rarr;</a>
           </div>
@@ -238,9 +276,9 @@ export const CASE_WORKSPACE_PAGE = `<!doctype html>
       <div style="background: #FFFFFF; border: 1px solid #DEDAD2; border-radius: 8px; padding: 20px 24px;">
         ${renderCaseThread()}
         <div style="display: flex; gap: 14px; padding: 8px 0; border-top: 1px solid #F0EEE9;">
-          <span class="mono" id="timelineFinalTime" style="width: 84px; flex-shrink: 0; font-size: 13px; color: #8A8880; padding-top: 2px;">&mdash;</span>
-          <span style="width: 96px; flex-shrink: 0; font-size: 13px; font-weight: 600; color: #4A4944; padding-top: 2px;" id="timelineFinalActor">PENDING</span>
-          <span style="font-size: 16px; color: #292826;" id="timelineFinalLabel">Awaiting ops approval on reboot_firmware</span>
+          <span class="mono" id="timelineFinalTime" style="width: 84px; flex-shrink: 0; font-size: 13px; color: #8A8880; padding-top: 2px;">${timelineFinalTime}</span>
+          <span style="width: 96px; flex-shrink: 0; font-size: 13px; font-weight: 600; color: #4A4944; padding-top: 2px;" id="timelineFinalActor">${timelineFinalActor}</span>
+          <span style="font-size: 16px; color: #292826;" id="timelineFinalLabel">${timelineFinalLabel}</span>
         </div>
       </div>
     </div>
@@ -355,16 +393,17 @@ export const CASE_WORKSPACE_PAGE = `<!doctype html>
           <div class="mono" style="font-size: 18px; font-weight: 600;">reboot_firmware</div>
           <div style="font-size: 15px; color: #6B6A64; margin: 4px 0 16px;">confidence 0.81 &middot; role required: ops</div>
           <div style="display: flex; gap: 8px; max-width: 320px;">
-            <button id="approveBtn" onclick="decideAction('approved')" style="flex: 1; background: #1E4D2B; color: #FFFFFF; border: none; border-radius: 6px; padding: 10px 0; font-size: 15px; font-weight: 700; cursor: pointer;">Approve</button>
-            <button id="rejectBtn" onclick="decideAction('rejected')" style="flex: 1; background: #FFFFFF; color: #DC2626; border: 1px solid #F0B4B4; border-radius: 6px; padding: 10px 0; font-size: 15px; font-weight: 600; cursor: pointer;">Reject</button>
+            <button id="approveBtn" onclick="decideAction('approved')" ${decided ? "disabled" : ""} style="flex: 1; background: ${approveBg}; color: ${approveColor}; border: none; border-radius: 6px; padding: 10px 0; font-size: 15px; font-weight: 700; cursor: ${approveCursor};">Approve</button>
+            <button id="rejectBtn" onclick="decideAction('rejected')" ${decided ? "disabled" : ""} style="flex: 1; background: #FFFFFF; color: #DC2626; border: 1px solid #F0B4B4; border-radius: 6px; padding: 10px 0; font-size: 15px; font-weight: 600; cursor: ${approveCursor};">Reject</button>
           </div>
-          <div style="margin-top: 12px; font-size: 15px; font-weight: 600;"><span id="actionStatusLabelAction" style="color: #9A5B00;">Awaiting ops approval</span></div>
+          <div style="margin-top: 12px; font-size: 15px; font-weight: 600;"><span id="actionStatusLabelAction" style="color: ${statusColor};">${statusLabel}</span></div>
 
           <div style="margin-top: 20px; padding-top: 18px; border-top: 1px solid #F0EEE9;">
             <div style="font-size: 13px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; color: #6B6A64; margin-bottom: 10px;">Approval</div>
-            <div style="font-size: 16px; margin-bottom: 14px;">Status: <span style="font-weight: 600;">Open</span></div>
-            <button id="signBtn" disabled style="width: 260px; background: #EFEDE7; color: #B0AEA6; border: 1px solid #D8D5CC; border-radius: 6px; padding: 10px 0; font-size: 15px; font-weight: 700; cursor: not-allowed;">Sign &amp; Close</button>
+            <div style="font-size: 16px; margin-bottom: 14px;">Status: <span id="approvalStatusLabel" style="font-weight: 600;">${approvalStatusLabel}</span></div>
+            <button id="signBtn" onclick="signClose()" ${signClickable ? "" : "disabled"} style="width: 260px; background: ${signBg}; color: ${signColor}; border: 1px solid ${signBorder}; border-radius: 6px; padding: 10px 0; font-size: 15px; font-weight: 700; cursor: ${signCursor};">${signLabel}</button>
             <div style="font-size: 14px; color: #8A8880; margin-top: 10px;">Engineer signature only &middot; resolve the recommended action above first.</div>
+            <div id="signedNote" ${closed ? "" : "hidden"} style="font-size: 14px; color: #1E4D2B; margin-top: 8px; font-weight: 600;">Signed by Engineer &middot; just now</div>
           </div>
         </div>
       </div>
@@ -436,6 +475,12 @@ function selectBar(kind, idx) {
 }
 
 function decideAction(state) {
+  fetch('/api/case/1234/decision', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: 'decision=' + state,
+  });
+
   document.getElementById('approveBtn').disabled = true;
   document.getElementById('rejectBtn').disabled = true;
   document.getElementById('approveBtn').style.background = '#EFEDE7';
@@ -470,6 +515,23 @@ function decideAction(state) {
   signBtn.style.borderColor = '#1E4D2B';
   signBtn.style.cursor = 'pointer';
 }
+
+function signClose() {
+  fetch('/api/case/1234/close', { method: 'POST' });
+
+  const signBtn = document.getElementById('signBtn');
+  signBtn.disabled = true;
+  signBtn.textContent = 'Signed & Closed ✓';
+  signBtn.style.background = '#EAF3E7';
+  signBtn.style.color = '#1E4D2B';
+  signBtn.style.borderColor = '#EAF3E7';
+  signBtn.style.cursor = 'default';
+
+  document.getElementById('caseStatusDiagnosis').textContent = 'Closed';
+  document.getElementById('approvalStatusLabel').textContent = 'Closed';
+  document.getElementById('signedNote').hidden = false;
+}
 </script>
 </body>
 </html>`;
+}

@@ -751,6 +751,7 @@ export const RESPONSE_PAGE = `<!doctype html>
       <a href="/fleet" style="font-size: 14px; color: #6B6A64; text-decoration: none;">Fleet</a>
       <a href="/case" style="font-size: 14px; color: #6B6A64; text-decoration: none; margin-left: 12px;">Case</a>
       <a href="/response" style="font-size: 14px; color: #1E4D2B; font-weight: 600; text-decoration: none; margin-left: 12px;">Response</a>
+      <span style="font-size: 13px; color: #8A8880; margin-left: 18px;">Logged in as <strong style="color: #4A4944;">Staff</strong> &middot; <a href="/logout" style="color: #6B6A64;">Logout</a></span>
     </div>
     <div style="display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; flex-wrap: wrap; padding-bottom: 20px;">
       <div>
