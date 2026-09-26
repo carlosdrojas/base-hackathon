@@ -10,8 +10,9 @@ Goal of the schema: distinguish *install miss* (fan never installed) from *dead 
 1. `inventory.csv` — fleet input (`VIN`, location, `faulted`, `fault_time_utc`).
 2. `events.csv` — detector outputs. Feed the agent these, not the full 1 Hz file.
 3. `telemetry_1hz.csv.gz` — analog window around the fault (pointer target).
-4. `packet_at_fault_time.csv` — one decoded packet per unit at `fault_time`.
-5. `raw_packet_uri` on inventory is a fake pointer (`pointer://fw-log/...`). Do not invent a binary parser.
+4. `packet_at_fault_time.csv` — one decoded packet per unit at `fault_time`, plus the comparison columns below. Nine `fixture_*` rows at the bottom are added detector cases. They are not inventory units.
+5. `fw_allowlist.json` — signed firmware versions for this file. Every original inventory `fw_rev` is on it. `core-inv-3.3.0` is not.
+6. `raw_packet_uri` on inventory is a fake pointer (`pointer://fw-log/...`). Do not invent a binary parser.
 
 `do_not_return_hardware=Y` means the recommended action is *not* an inverter/pack RMA.
 
@@ -68,6 +69,26 @@ Comms: `last_pkt_age_ms`, `gateway_online`.
 
 Sign convention: `p_ac_w` > 0 is discharge / export toward the home+grid; < 0 is charge.
 
+## Detector columns on packet_at_fault_time.csv
+
+Appended so `runDetectors` can be run from this file. Original analog columns are unchanged.
+
+Copied from `inventory.csv`: `fw_version`, `hw_rev`, `faulted`.
+
+Computed from measurements already on the row:
+
+- `line_voltage_v` is `min(v_a_v, v_b_v)`. `v_c_v` is about 2 V on every unit, including healthy ones, and is not used.
+- `grid_voltage_outside_window` / `grid_freq_outside_window` use the detector windows (211–264 V, 59.3–60.5 Hz).
+- `cell_overtemp_trip` is the manual rule: cell temp above 65 °C and pack current above 0.5 A. None of the original rows trip it.
+- `overtemp_signature` copies `evt_over_temp`. A 1 clamps the case to L0 even when the 65 °C rule is false (`healthy_false_alarm`).
+- `ct_polarity_reversed` copies `evt_ct_reversed`.
+- `checklist_complete` is N when `clearance_ok` is false or the observed fan count does not match the BOM.
+- `first_boot_self_test_pass` is N when the fan counts disagree.
+- `gateway_offline` is Y when `gateway_online` is 0.
+- `fw_on_signed_manifest` is the allow-list comparison.
+
+CAN counters, boot reason, house load, and playbook flags were not in the original snapshot. On the 48 inventory rows they are filled as "no extra signature" (zeros, `power_on`, playbooks not done). The `fixture_*` rows are where those comparisons are actually planted. `expected_root_cause`, `expected_level`, and `expected_action` are the answer key for `npm test`.
+
 ## RCA cheat for fan-never-installed
 
 Expect together:
@@ -79,4 +100,4 @@ Expect together:
 - `t_cell_spread_c` small
 - `t_ambient_c` not insane
 
-That is an L2 install fix, not an L4 pull.
+That is an L2 install fix, not an L4 pull. On this fault-time packet, `evt_over_temp` is also 1, so the step-1 detectors clamp the row to L0. The incomplete fan checklist stays a differential.

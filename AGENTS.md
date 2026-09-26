@@ -60,7 +60,7 @@ Commands: `npm install` · `npm run build` · `npm start` (MCP server) · `npm r
 - Published artifacts (private): Curtailment Radar https://claude.ai/artifact/NP7Uvc1XSsTVFZeRT1zQ9a · Issue Router https://claude.ai/artifact/VmwZV4Sajzu3xzra37T23i
 
 **In progress / not built**
-- Field RCA pipeline itself: CSV ingest, map, auto-created RCA tickets, triage agent, live status updates. UI exists; the engine doesn't.
+- Field RCA pipeline itself: CSV ingest, map, auto-created RCA tickets, model triage, live status updates. UI exists. Step 1 deterministic detectors are in `src/field-rca/detectors/` (`runDetectors`); the model agent is still unwired.
 - `core-fleet-telemetry.json` → `/case` and `/fleet` wiring.
 - "Router Trace" walkthrough of the Sep 25 18:35 CT congestion event: drafted, never published.
 

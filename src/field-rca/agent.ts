@@ -3,6 +3,7 @@
  * Job 1: root cause from the event list.
  * Job 2: gameplan (action, permission level, who to alert).
  * Both throw until a real run is wired. No model call lives here yet.
+ * Step 1 classification is runDetectors(), not this agent.
  */
 
 import type { DebugInput, Gameplan, GameplanInput, Hypothesis } from "./contracts.js";
