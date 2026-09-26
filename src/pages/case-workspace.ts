@@ -124,6 +124,10 @@ export const CASE_WORKSPACE_PAGE = `<!doctype html>
       <img src="/base_logo.png" alt="Base" style="height: 48px; width: auto; display: block;">
       <span style="width: 1px; height: 24px; background: #C9C6BD; display: inline-block;"></span>
       <span style="font-size: 15px; color: #6B6A64; font-weight: 400;">Field RCA</span>
+      <span style="flex: 1;"></span>
+      <a href="/fleet" style="font-size: 14px; color: #6B6A64; text-decoration: none;">Fleet</a>
+      <a href="/case" style="font-size: 14px; color: #1E4D2B; font-weight: 600; text-decoration: none; margin-left: 12px;">Case</a>
+      <a href="/response" style="font-size: 14px; color: #6B6A64; text-decoration: none; margin-left: 12px;">Response</a>
     </div>
     <a href="/fleet" style="font-size: 15px; color: #6B6A64; text-decoration: none;">&larr; Open cases</a>
     <div style="display: flex; align-items: baseline; gap: 12px; margin-top: 6px; padding-bottom: 14px;">

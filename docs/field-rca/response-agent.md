@@ -215,6 +215,8 @@ Vanilla HTML/JS string (`RESPONSE_PAGE`), matching the look of `src/pages/fleet-
 - **Case detail:** the timeline (CaseEvents), the step results, and a **Close case** button (engineer).
 - **Visits:** scheduled visits with brief and checklist. A technician user sees **Complete visit** (photos checkbox) and **Mark incomplete** (reason dropdown).
 - **Bug reports:** a list; click to read the markdown body.
+- **Onboarding tour:** spotlight walkthrough of each panel on the first visit (localStorage `response.tour.v1`). Replay with the **Tour** button or `/response?tour=1`.
+- **Getting here:** `/fleet` and `/case` share the Fleet · Case · Response nav, and `/fleet` shows a live Response agent banner (actions waiting, safety cases). `/response?case=RCA-0003` opens a specific case.
 
 ## 13. Seed fleet + demo script
 

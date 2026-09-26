@@ -23,7 +23,7 @@ function clientMain(): void {
   let state: any = null;
   let userId = "u-alvarez";
   try { userId = localStorage.getItem(USER_KEY) || userId; } catch { /* storage blocked */ }
-  let selectedCase: string | null = null;
+  let selectedCase: string | null = new URLSearchParams(location.search).get("case"); // deep link: /response?case=RCA-0003
   let plantMenuVin: string | null = null;
   let rejecting: string | null = null; // step_id with the reject form open
   let rejectReason = "";
@@ -514,6 +514,172 @@ function clientMain(): void {
   setInterval(() => { if (!busy) refresh(); }, 2000);
 }
 
+// First-visit onboarding walkthrough for /response. Spotlights one panel at a time. Remembered per
+// browser in localStorage ("response.tour.v1"); replay with the Tour button or /response?tour=1.
+// Serialized with toString() like clientMain, so it must be self-contained.
+function tourMain(): void {
+  const KEY = "response.tour.v1";
+  type Step = { target?: string; title: string; body: string };
+  const STEPS: Step[] = [
+    { title: "Welcome to the Response agent",
+      body: "Diagnosis tells you what's wrong with an inverter. This page is what happens next: the agent plans the cheapest safe fix, a person approves it, the system runs it on the fleet, and then checks the fault actually cleared. The goal is to stop pulling healthy inverters back to HQ. This tour takes about a minute." },
+    { target: "#roleSwitch", title: "Acting as: pick your role",
+      body: "Switch between Technician, Ops and Engineer. What you can approve changes with the role, and the server enforces it, not just the buttons. Ops approves reboots and dispatches, only an Engineer can approve a firmware update or close a case, and a Technician approves nothing but completes field visits." },
+    { target: "#planner", title: "Who wrote the plan",
+      body: "\"Claude\" when the AI planner is live, \"playbook\" when it falls back to fixed rules. Either way it can only choose from a fixed list of actions, and it can never write or patch firmware." },
+    { target: "#metrics", title: "The scoreboard",
+      body: "Fixed remotely = solved with no truck. Avoided false pulls = a tech found nothing wrong, so no healthy unit went back to HQ. Gate denials = unsafe or unauthorized actions the rules blocked. Hover the ? on any tile for its definition." },
+    { target: "#fleetCard", title: "The fleet",
+      body: "Each tile is one simulated inverter (MOCKED): green is healthy, red is faulted, dark red is a safety case. Stale firmware is flagged in red. Use Plant fault on a healthy unit to create a new incident live, and Reset to seed to start the demo over." },
+    { target: ".caseCard", title: "A case",
+      body: "One card per incident, most urgent first. The top line shows the level of the step it's on now (\"now L2 · up to L4\") and its status. Below it: the diagnosis, how confident it is, and the plan, cheapest and safest step first. Click a card to open it on the right." },
+    { target: ".caseCard [data-act=\"approve\"]", title: "Approve or reject a step",
+      body: "Steps wait here for the right person. If your role can't approve one, the button is disabled and tells you why (for example \"engineer only\"). After approval the action runs on the fleet and the verifier re-checks the unit: cleared goes to Engineer review; still faulted moves to the next step or escalates." },
+    { target: "#detailCard", title: "Case detail and timeline",
+      body: "Everything that happened on the case: the diagnosis, each approval and by whom, what ran, whether it worked, and alerts sent. This is the audit trail. An Engineer closes the case here once it's resolved." },
+    { target: "#visitsCard", title: "Field visits",
+      body: "When a tech has to go on site, the agent books one with a short \"why you're here\" and a checklist. Switch to a Technician to complete the visit. Connector and install jobs need photos first, and an incomplete visit needs a reason so the next person isn't starting from zero." },
+    { target: "#bugsCard", title: "Engineer bug reports",
+      body: "When several units on the same firmware fail the same way, the agent writes a report for engineers with the evidence and affected units. It recommends; it never patches." },
+    { title: "Try it",
+      body: "As M. Alvarez (Ops), approve the reboot on INV-5003 and watch it clear with no truck sent. Then try INV-5008 as Ops and see the firmware update blocked as engineer-only. Replay this tour any time with the Tour button." },
+  ];
+
+  let i = 0;
+  let curTarget: string | undefined; // STEPS[i].target, or its fallback
+  let root: HTMLDivElement | null = null;
+  let timer: number | undefined;
+
+  const $ = (sel: string) => document.querySelector(sel) as HTMLElement | null;
+  const esc = (t: string) => t.replace(/[&<>"]/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" } as any)[ch]);
+
+  function seen(): boolean { try { return localStorage.getItem(KEY) === "done"; } catch { return false; } }
+  function markSeen(): void { try { localStorage.setItem(KEY, "done"); } catch { /* storage blocked */ } }
+
+  function build(): void {
+    root = document.createElement("div");
+    root.id = "tour";
+    root.innerHTML = `
+      <div id="tourShade" style="position:fixed;inset:0;z-index:100;"></div>
+      <div id="tourHole" style="position:fixed;z-index:101;border-radius:10px;box-shadow:0 0 0 9999px rgba(30,29,27,0.58);outline:2px solid #FFFFFF;transition:all 0.25s ease;pointer-events:none;"></div>
+      <div id="tourCard" role="dialog" aria-modal="true" aria-labelledby="tourTitle" style="position:fixed;z-index:102;background:#FFFFFF;border-radius:10px;box-shadow:0 12px 32px rgba(0,0,0,0.25);padding:18px 20px 14px;width:min(380px,calc(100vw - 32px));transition:top 0.25s ease,left 0.25s ease;">
+        <div id="tourCount" style="font-size:12px;font-weight:600;letter-spacing:0.04em;text-transform:uppercase;color:#1E4D2B;"></div>
+        <div id="tourTitle" style="font-size:17px;font-weight:600;color:#292826;margin-top:4px;"></div>
+        <div id="tourBody" style="font-size:14px;line-height:1.5;color:#4A4944;margin-top:8px;"></div>
+        <div style="display:flex;align-items:center;gap:8px;margin-top:14px;">
+          <button type="button" data-tour="skip" class="btn btnGhost" style="border:none;color:#6B6A64;padding-left:0;">Skip tour</button>
+          <span style="flex:1;"></span>
+          <button type="button" data-tour="back" class="btn btnGhost">Back</button>
+          <button type="button" data-tour="next" class="btn btnPrimary"></button>
+        </div>
+        <div id="tourDots" style="display:flex;gap:5px;justify-content:center;margin-top:12px;"></div>
+      </div>`;
+    document.body.appendChild(root);
+    root.addEventListener("click", (ev) => {
+      const b = (ev.target as HTMLElement).closest("[data-tour]") as HTMLElement | null;
+      if (!b) return;
+      const a = b.dataset.tour;
+      if (a === "next") go(i + 1);
+      else if (a === "back") go(i - 1);
+      else if (a === "skip") end();
+    });
+  }
+
+  function place(): void {
+    if (!root) return;
+    const hole = $("#tourHole")!;
+    const card = $("#tourCard")!;
+    const el = curTarget ? $(curTarget) : null;
+    const vw = window.innerWidth, vh = window.innerHeight;
+    const cw = card.offsetWidth, ch = card.offsetHeight;
+    if (!el) {
+      hole.style.cssText += `;top:${vh / 2}px;left:${vw / 2}px;width:0;height:0;`;
+      card.style.top = `${Math.max(16, (vh - ch) / 2)}px`;
+      card.style.left = `${Math.max(16, (vw - cw) / 2)}px`;
+      return;
+    }
+    const r = el.getBoundingClientRect();
+    const pad = 6;
+    hole.style.top = `${r.top - pad}px`;
+    hole.style.left = `${r.left - pad}px`;
+    hole.style.width = `${r.width + pad * 2}px`;
+    hole.style.height = `${r.height + pad * 2}px`;
+    // Card below the target if it fits, else above, else pinned to the bottom of the screen.
+    let top = r.bottom + 14;
+    if (top + ch > vh - 16) top = r.top - ch - 14;
+    if (top < 16) top = vh - ch - 16;
+    let left = Math.min(Math.max(16, r.left), vw - cw - 16);
+    card.style.top = `${top}px`;
+    card.style.left = `${left}px`;
+  }
+
+  function go(n: number): void {
+    if (n >= STEPS.length) return end();
+    i = Math.max(0, n);
+    // Fall back to the case card if no approvable step exists right now.
+    const step = STEPS[i];
+    const target = step.target && !$(step.target) && step.target.includes("approve") ? ".caseCard" : step.target;
+    curTarget = target;
+    $("#tourCount")!.textContent = `Step ${i + 1} of ${STEPS.length}`;
+    $("#tourTitle")!.textContent = step.title;
+    $("#tourBody")!.innerHTML = esc(step.body);
+    ($("[data-tour=back]") as HTMLButtonElement).style.visibility = i === 0 ? "hidden" : "visible";
+    $("[data-tour=next]")!.textContent = i === 0 ? "Start" : i === STEPS.length - 1 ? "Done" : "Next";
+    $("#tourDots")!.innerHTML = STEPS.map((_, k) =>
+      `<span style="width:6px;height:6px;border-radius:50%;background:${k === i ? "#1E4D2B" : "#D8D5CC"};"></span>`).join("");
+    const el = target ? $(target) : null;
+    if (el) {
+      const r = el.getBoundingClientRect();
+      const header = ($(".hdrPad") as HTMLElement | null)?.offsetHeight ?? 0;
+      const inView = r.top >= header && r.bottom <= window.innerHeight;
+      if (!inView && !el.closest(".hdrPad[style*=sticky]")) {
+        window.scrollTo({ top: window.scrollY + r.top - header - 24, behavior: "smooth" });
+      }
+    }
+    place();
+    setTimeout(place, 350); // after smooth scroll settles
+    ($("[data-tour=next]") as HTMLButtonElement).focus();
+  }
+
+  function start(): void {
+    if (root) return;
+    build();
+    // The page re-renders every 2 s; keep the spotlight glued to the current target.
+    timer = window.setInterval(place, 400);
+    window.addEventListener("resize", place);
+    window.addEventListener("scroll", place, { passive: true });
+    document.addEventListener("keydown", onKey);
+    go(0);
+  }
+
+  function end(): void {
+    markSeen();
+    if (timer) clearInterval(timer);
+    window.removeEventListener("resize", place);
+    window.removeEventListener("scroll", place);
+    document.removeEventListener("keydown", onKey);
+    root?.remove();
+    root = null;
+  }
+
+  function onKey(ev: KeyboardEvent): void {
+    if (ev.key === "Escape") end();
+    else if (ev.key === "ArrowRight" || ev.key === "Enter") { ev.preventDefault(); go(i + 1); }
+    else if (ev.key === "ArrowLeft") go(i - 1);
+  }
+
+  document.getElementById("tourBtn")?.addEventListener("click", () => start());
+
+  // Auto-start on first visit, once the page has data (case cards rendered).
+  const force = new URLSearchParams(location.search).get("tour") === "1";
+  if (force || !seen()) {
+    const t0 = Date.now();
+    const wait = window.setInterval(() => {
+      if ($(".caseCard") || Date.now() - t0 > 6000) { clearInterval(wait); start(); }
+    }, 200);
+  }
+}
+
 export const RESPONSE_PAGE = `<!doctype html>
 <html lang="en">
 <head>
@@ -594,7 +760,8 @@ export const RESPONSE_PAGE = `<!doctype html>
       <div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">
         <span class="mocked" title="Fake fleet and in-memory engine. Not Base data, no production APIs.">MOCKED</span>
         <span id="planner"></span>
-        <label style="font-size: 13px; color: #6B6A64; display: flex; align-items: center; gap: 6px;">Acting as
+        <button id="tourBtn" class="btn btnGhost" type="button" title="Replay the walkthrough">Tour</button>
+        <label id="roleSwitch" style="font-size: 13px; color: #6B6A64; display: flex; align-items: center; gap: 6px;">Acting as
           <select id="userSel" class="input" style="font-size: 14px; font-weight: 600;"></select>
         </label>
         <span id="conn" style="font-size: 12px; color: #B42318;"></span>
@@ -608,7 +775,7 @@ export const RESPONSE_PAGE = `<!doctype html>
 
     <div id="metrics" class="grid-metrics"></div>
 
-    <div class="card" style="padding: 16px 18px; margin-bottom: 20px;">
+    <div id="fleetCard" class="card" style="padding: 16px 18px; margin-bottom: 20px;">
       <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px;">
         <div class="panelTitle">Fake fleet <span style="font-weight: 400; color: #8A8880;">&middot; 12 simulated inverters &middot; 3.4.0 is allow-listed</span></div>
         <button class="btn btnGhost" data-act="reset">Reset to seed</button>
@@ -625,15 +792,15 @@ export const RESPONSE_PAGE = `<!doctype html>
         <div id="queue"></div>
       </div>
       <div class="sideCol" style="display: flex; flex-direction: column; gap: 20px;">
-        <div class="card" style="padding: 16px 18px;">
+        <div id="detailCard" class="card" style="padding: 16px 18px;">
           <div class="panelTitle" style="margin-bottom: 10px;">Case detail</div>
           <div id="detail"></div>
         </div>
-        <div class="card" style="padding: 16px 18px;">
+        <div id="visitsCard" class="card" style="padding: 16px 18px;">
           <div class="panelTitle" style="margin-bottom: 10px;">Visits</div>
           <div id="visits"></div>
         </div>
-        <div class="card" style="padding: 16px 18px;">
+        <div id="bugsCard" class="card" style="padding: 16px 18px;">
           <div class="panelTitle" style="margin-bottom: 10px;">Engineer bug reports</div>
           <div id="bugs"></div>
         </div>
@@ -654,6 +821,9 @@ export const RESPONSE_PAGE = `<!doctype html>
 
 <script>
 (${clientMain.toString()})();
+</script>
+<script>
+(${tourMain.toString()})();
 </script>
 </body>
 </html>`;

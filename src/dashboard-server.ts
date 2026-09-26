@@ -37,7 +37,7 @@ const server = http.createServer(async (req, res) => {
     res.end(CASE_WORKSPACE_PAGE);
     return;
   }
-  if (req.url === "/response") {
+  if (req.url === "/response" || req.url?.startsWith("/response?")) {
     res.writeHead(200, { "Content-Type": "text/html" });
     res.end(RESPONSE_PAGE);
     return;
