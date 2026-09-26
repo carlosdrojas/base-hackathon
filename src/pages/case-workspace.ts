@@ -204,7 +204,14 @@ export function renderCaseWorkspacePage(decision: Decision, closed: boolean): st
         <span style="width: 1px; height: 24px; background: #C9C6BD; display: inline-block;"></span>
         <span style="font-size: 15px; color: #6B6A64; font-weight: 400;">Field RCA</span>
       </div>
-      <div style="font-size: 13px; color: #8A8880;">Logged in as <strong style="color: #4A4944;">Staff</strong> &middot; <a href="/logout" style="color: #6B6A64;">Logout</a></div>
+      <div style="display: flex; align-items: center; gap: 18px;">
+        <nav style="display: flex; gap: 12px;">
+          <a href="/fleet" style="font-size: 14px; color: #6B6A64; text-decoration: none;">Fleet</a>
+          <a href="/case" style="font-size: 14px; color: #1E4D2B; font-weight: 600; text-decoration: none;">Case</a>
+          <a href="/response" style="font-size: 14px; color: #6B6A64; text-decoration: none;">Response</a>
+        </nav>
+        <div style="font-size: 13px; color: #8A8880;">Logged in as <strong style="color: #4A4944;">Staff</strong> &middot; <a href="/logout" style="color: #6B6A64;">Logout</a></div>
+      </div>
     </div>
     <a href="/fleet" style="font-size: 15px; color: #6B6A64; text-decoration: none;">&larr; Open cases</a>
     <div style="display: flex; align-items: baseline; gap: 12px; margin-top: 6px; padding-bottom: 14px;">

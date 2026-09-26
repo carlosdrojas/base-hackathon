@@ -59,6 +59,8 @@ Commands: `npm install` · `npm run build` · `npm start` (MCP server) · `npm r
 - Real-spec mock Core telemetry file (8 units, provenance-tagged).
 - Published artifacts (private): Curtailment Radar https://claude.ai/artifact/NP7Uvc1XSsTVFZeRT1zQ9a · Issue Router https://claude.ai/artifact/VmwZV4Sajzu3xzra37T23i
 
+- **Response Agent + Fake Fleet** (Carlos, `resp-integration`): `/response` page on the real engine. 12-unit simulated inverter fleet (`src/sim/`), response engine (`src/response/`): planner (Claude when `ANTHROPIC_API_KEY` is set, else playbook), deterministic policy gate, runner/verifier with escalation, tech scheduling with photo-gated visit completion, engineer bug reports, case timeline. `npm test`: 110 tests pass. Demo scenes 1–6 in `docs/field-rca/response-agent.md` §13 verified through the live API. All MOCKED.
+
 **In progress / not built**
 - Field RCA pipeline itself: CSV ingest, map, auto-created RCA tickets, triage agent, live status updates. UI exists; the engine doesn't.
 - `core-fleet-telemetry.json` → `/case` and `/fleet` wiring.

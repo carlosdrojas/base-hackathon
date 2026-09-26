@@ -19,6 +19,8 @@ import {
   type Decision,
 } from "./session-store.js";
 import { createFieldRcaWorkspace } from "./field-rca/index.js";
+import { RESPONSE_PAGE } from "./pages/response-page.js";
+import { handleResponseRoutes, startResponseEngine } from "./response/routes.js";
 
 /** Field RCA auto-triage seam. Not the Issue Router mock fleet below. */
 const fieldRca = createFieldRcaWorkspace();
@@ -92,6 +94,24 @@ const server = http.createServer(async (req, res) => {
   const role = getRole(req);
   if (!role) {
     redirect(res, "/login");
+    return;
+  }
+
+  // --- Response agent (staff only; in-page role switcher picks tech / ops / engineer for the demo) ---
+  if (pathname.startsWith("/api/response/") || pathname.startsWith("/api/sim/")) {
+    if (role !== "staff") {
+      res.writeHead(403, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ error: "staff only" }));
+      return;
+    }
+    if (await handleResponseRoutes(req, res)) return;
+  }
+  if (pathname === "/response") {
+    if (role !== "staff") {
+      redirect(res, homeFor(role));
+      return;
+    }
+    html(res, RESPONSE_PAGE);
     return;
   }
 
@@ -172,5 +192,6 @@ const server = http.createServer(async (req, res) => {
 });
 
 server.listen(PORT, () => {
+  startResponseEngine();
   console.log(`Fleet RCA dashboard running at http://localhost:${PORT}`);
 });

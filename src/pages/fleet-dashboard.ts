@@ -224,7 +224,14 @@ export function renderFleetDashboardPage(decision: Decision, caseClosed: boolean
         <span style="width: 1px; height: 24px; background: #C9C6BD; display: inline-block;"></span>
         <span style="font-size: 15px; color: #6B6A64; font-weight: 400;">Field RCA</span>
       </div>
-      <div style="font-size: 13px; color: #8A8880;">Logged in as <strong style="color: #4A4944;">Staff</strong> &middot; <a href="/logout" style="color: #6B6A64;">Logout</a></div>
+      <div style="display: flex; align-items: center; gap: 18px;">
+        <nav style="display: flex; gap: 12px;">
+          <a href="/fleet" style="font-size: 14px; color: #1E4D2B; font-weight: 600; text-decoration: none;">Fleet</a>
+          <a href="/case" style="font-size: 14px; color: #6B6A64; text-decoration: none;">Case</a>
+          <a href="/response" style="font-size: 14px; color: #6B6A64; text-decoration: none;">Response</a>
+        </nav>
+        <div style="font-size: 13px; color: #8A8880;">Logged in as <strong style="color: #4A4944;">Staff</strong> &middot; <a href="/logout" style="color: #6B6A64;">Logout</a></div>
+      </div>
     </div>
     <div style="font-size: 24px; font-weight: 600; color: #292826;">Fleet RCA dashboard</div>
     <div style="font-size: 15px; color: #6B6A64; margin-top: 2px; padding-bottom: 20px;">Entry point into individual Cases &mdash; click a row to open its Case workspace.</div>
@@ -233,6 +240,36 @@ export function renderFleetDashboardPage(decision: Decision, caseClosed: boolean
 
   <!-- BODY -->
   <div style="padding: 32px 40px 80px;">
+
+  <!-- RESPONSE AGENT BANNER (live from /api/response/state; hidden if the engine is unavailable) -->
+  <a id="respBanner" href="/response" style="display: none; align-items: center; gap: 14px; background: #FFFFFF; border: 1px solid #DEDAD2; border-left: 4px solid #1E4D2B; border-radius: 8px; padding: 14px 18px; margin-bottom: 20px; text-decoration: none; color: #292826;">
+    <div style="flex: 1;">
+      <div style="font-size: 15px; font-weight: 600;">Response agent</div>
+      <div id="respBannerText" style="font-size: 14px; color: #6B6A64; margin-top: 2px;"></div>
+    </div>
+    <span style="font-size: 14px; font-weight: 600; color: #1E4D2B; white-space: nowrap;">Open Response agent &rarr;</span>
+  </a>
+  <script>
+  (function () {
+    function load() {
+      fetch("/api/response/state").then(function (r) { return r.ok ? r.json() : null; }).then(function (s) {
+        if (!s) return;
+        var waiting = 0, l0 = 0;
+        s.cases.forEach(function (c) {
+          if (c.status === "Escalated L0") l0++;
+          (c.gameplan ? c.gameplan.steps : []).forEach(function (st) { if (st.state === "awaiting_approval") waiting++; });
+        });
+        var parts = [waiting + " action" + (waiting === 1 ? "" : "s") + " waiting for approval"];
+        if (l0) parts.push(l0 + " safety case" + (l0 === 1 ? "" : "s"));
+        parts.push(s.metrics.fixed_remote + " fixed remotely", s.metrics.avoided_false_pulls + " false pull" + (s.metrics.avoided_false_pulls === 1 ? "" : "s") + " avoided");
+        document.getElementById("respBannerText").textContent = parts.join(" · ") + " (MOCKED fleet)";
+        document.getElementById("respBanner").style.display = "flex";
+      }).catch(function () { /* engine not running: keep the banner hidden */ });
+    }
+    load();
+    setInterval(load, 5000);
+  })();
+  </script>
 
   <!-- KPI ROW -->
   <div style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; margin-bottom: 24px;">
