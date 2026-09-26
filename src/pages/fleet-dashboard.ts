@@ -21,7 +21,7 @@ const fwClusterData = [
 const trendVals = [34, 31, 29, 25, 22, 19, 15, 12];
 const trendMax = 34;
 
-interface CaseRow {
+export interface CaseRow {
   id: string;
   asset: string;
   site: string;
@@ -29,21 +29,22 @@ interface CaseRow {
   rootCause: string;
   status: string;
   age: string;
+  assignedTech: string;
 }
 
-const allCases: CaseRow[] = [
-  { id: "#1234", asset: "INV-4021", site: "118 Maple Ct", sev: "L2", rootCause: "can_link_unreliable", status: "Investigating", age: "2h" },
-  { id: "#1235", asset: "COR-0092", site: "44 Birch Ln", sev: "L0", rootCause: "thermal_or_safety_event", status: "Escalated L0", age: "11m" },
-  { id: "#1229", asset: "INV-3987", site: "9 Larkspur Way", sev: "L1", rootCause: "install_commissioning_incomplete", status: "Awaiting engineer review", age: "1d" },
-  { id: "#1230", asset: "INV-4102", site: "118 Maple Ct", sev: "L3", rootCause: "fw_version_mismatch", status: "Action pending approval", age: "4h" },
-  { id: "#1231", asset: "COR-0071", site: "7 Cedar Ct", sev: "L4", rootCause: "true_hardware_defect", status: "Awaiting field visit", age: "3d" },
-  { id: "#1227", asset: "INV-3987", site: "9 Larkspur Way", sev: "L1", rootCause: "no_fault_found", status: "Closed", age: "6d" },
+export const allCases: CaseRow[] = [
+  { id: "#1234", asset: "INV-4021", site: "118 Maple Ct", sev: "L2", rootCause: "can_link_unreliable", status: "Investigating", age: "2h", assignedTech: "D. Osei" },
+  { id: "#1235", asset: "COR-0092", site: "44 Birch Ln", sev: "L0", rootCause: "thermal_or_safety_event", status: "Escalated L0", age: "11m", assignedTech: "R. Fenwick" },
+  { id: "#1229", asset: "INV-3987", site: "9 Larkspur Way", sev: "L1", rootCause: "install_commissioning_incomplete", status: "Awaiting engineer review", age: "1d", assignedTech: "K. Nguyen" },
+  { id: "#1230", asset: "INV-4102", site: "118 Maple Ct", sev: "L3", rootCause: "fw_version_mismatch", status: "Action pending approval", age: "4h", assignedTech: "D. Osei" },
+  { id: "#1231", asset: "COR-0071", site: "7 Cedar Ct", sev: "L4", rootCause: "true_hardware_defect", status: "Awaiting field visit", age: "3d", assignedTech: "R. Fenwick" },
+  { id: "#1227", asset: "INV-3987", site: "9 Larkspur Way", sev: "L1", rootCause: "no_fault_found", status: "Closed", age: "6d", assignedTech: "K. Nguyen" },
 ];
 
 const techs = [
-  { name: "D. Osei", completion: "88%", secondVisit: "6%", tags: "connector-class refresher" },
-  { name: "R. Fenwick", completion: "95%", secondVisit: "3%", tags: "—" },
-  { name: "K. Nguyen", completion: "79%", secondVisit: "14%", tags: "install checklist, panel access" },
+  { name: "D. Osei", completion: "88%", tags: "connector-class refresher" },
+  { name: "R. Fenwick", completion: "95%", tags: "—" },
+  { name: "K. Nguyen", completion: "79%", tags: "install checklist, panel access" },
 ];
 
 function renderRootCauses(): string {
@@ -76,11 +77,11 @@ function renderFwClusters(): string {
 
 function renderTrend(): string {
   const width = 300;
-  const height = 100;
-  const leftPad = 28;
-  const rightPad = 6;
-  const topPad = 8;
-  const bottomPad = 18;
+  const height = 340;
+  const leftPad = 30;
+  const rightPad = 8;
+  const topPad = 12;
+  const bottomPad = 24;
   const plotW = width - leftPad - rightPad;
   const plotH = height - topPad - bottomPad;
   const yMax = 40; // clean round scale above the 34% starting value
@@ -126,12 +127,12 @@ function renderTrend(): string {
   </svg>`;
 }
 
-const sevColors: Record<CaseRow["sev"], { bg: string; color: string }> = {
+export const sevColors: Record<CaseRow["sev"], { bg: string; color: string }> = {
   L0: { bg: "#FDECEC", color: "#B42318" },
   L1: { bg: "#FFF3E0", color: "#9A5B00" },
   L2: { bg: "#FFF3E0", color: "#9A5B00" },
-  L3: { bg: "#EAF1FF", color: "#1E4FBE" },
-  L4: { bg: "#EFEDE7", color: "#4A4944" },
+  L3: { bg: "#EAF3E7", color: "#1E4D2B" },
+  L4: { bg: "#EAF3E7", color: "#1E4D2B" },
 };
 
 function repeatTag(site: string): string {
@@ -163,7 +164,11 @@ function renderFilters(): string {
     .join("");
 }
 
-export const FLEET_DASHBOARD_PAGE = `<!doctype html>
+export function renderFleetDashboardPage(caseClosed: boolean): string {
+  const rows = allCases.map((c) => (c.id === "#1234" && caseClosed ? { ...c, status: "Closed" } : c));
+  const openRows = rows.filter((c) => c.status !== "Closed");
+  const closedRows = rows.filter((c) => c.status === "Closed");
+  return `<!doctype html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
@@ -212,10 +217,13 @@ export const FLEET_DASHBOARD_PAGE = `<!doctype html>
 
   <!-- HEADER -->
   <div style="position: sticky; top: 0; z-index: 10; background: #F0EEEB; padding: 20px 40px 0;">
-    <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 14px;">
-      <img src="/base_logo.png" alt="Base" style="height: 48px; width: auto; display: block;">
-      <span style="width: 1px; height: 24px; background: #C9C6BD; display: inline-block;"></span>
-      <span style="font-size: 15px; color: #6B6A64; font-weight: 400;">Field RCA</span>
+    <div style="display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 14px;">
+      <div style="display: flex; align-items: center; gap: 10px;">
+        <img src="/base_logo.png" alt="Base" style="height: 48px; width: auto; display: block;">
+        <span style="width: 1px; height: 24px; background: #C9C6BD; display: inline-block;"></span>
+        <span style="font-size: 15px; color: #6B6A64; font-weight: 400;">Field RCA</span>
+      </div>
+      <div style="font-size: 13px; color: #8A8880;">Logged in as <strong style="color: #4A4944;">Staff</strong> &middot; <a href="/logout" style="color: #6B6A64;">Logout</a></div>
     </div>
     <div style="font-size: 24px; font-weight: 600; color: #292826;">Fleet RCA dashboard</div>
     <div style="font-size: 15px; color: #6B6A64; margin-top: 2px; padding-bottom: 20px;">Entry point into individual Cases &mdash; click a row to open its Case workspace.</div>
@@ -226,22 +234,18 @@ export const FLEET_DASHBOARD_PAGE = `<!doctype html>
   <div style="padding: 32px 40px 80px;">
 
   <!-- KPI ROW -->
-  <div style="display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; margin-bottom: 24px;">
+  <div style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; margin-bottom: 24px;">
     <div style="background: #FFFFFF; border: 1px solid #DEDAD2; border-radius: 8px; padding: 16px 18px;">
       <div style="font-size: 13px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; color: #6B6A64;">Open cases<span class="tip" data-tip="Cases currently active across the fleet — detected and not yet closed, at any severity or stage.">?</span></div>
       <div style="font-size: 30px; font-weight: 600; margin-top: 6px;">43</div>
     </div>
     <div style="background: #FFFFFF; border: 1px solid #DEDAD2; border-radius: 8px; padding: 16px 18px;">
-      <div style="font-size: 13px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; color: #6B6A64;">2nd-visit rate<span class="tip" data-tip="Share of cases that needed a second technician visit to actually resolve, instead of being closed on the first trip.">?</span></div>
-      <div style="font-size: 30px; font-weight: 600; margin-top: 6px;">8% <span style="font-size: 15px; color: #1D6F3E;">&#9660; 3pt</span></div>
-    </div>
-    <div style="background: #FFFFFF; border: 1px solid #DEDAD2; border-radius: 8px; padding: 16px 18px;">
       <div style="font-size: 13px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; color: #6B6A64;">Agent / eng agreement<span class="tip" data-tip="Share of cases where the agent's root-cause hypothesis matched what the reviewing engineer concluded.">?</span></div>
-      <div style="font-size: 30px; font-weight: 600; margin-top: 6px;">74% <span style="font-size: 15px; color: #1D6F3E;">&#9650; 5pt</span></div>
+      <div style="font-size: 30px; font-weight: 600; margin-top: 6px;">74%</div>
     </div>
     <div style="background: #FFFFFF; border: 1px solid #DEDAD2; border-radius: 8px; padding: 16px 18px;">
       <div style="font-size: 13px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; color: #6B6A64;">Median time-to-action<span class="tip" data-tip="Median time from a case being opened to the first human action on it — approve, reject, or dispatch.">?</span></div>
-      <div style="font-size: 30px; font-weight: 600; margin-top: 6px;">2.1h <span style="font-size: 15px; color: #1D6F3E;">&#9660; 0.6h</span></div>
+      <div style="font-size: 30px; font-weight: 600; margin-top: 6px;">2.1h</div>
     </div>
   </div>
 
@@ -262,7 +266,7 @@ export const FLEET_DASHBOARD_PAGE = `<!doctype html>
     <div style="background: #FFFFFF; border: 1px solid #DEDAD2; border-radius: 8px; padding: 16px 18px;">
       <div style="display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 4px;">
         <div style="font-size: 14px; font-weight: 600; color: #4A4944;">False-pull rate &mdash; 8 week trend<span class="tip" data-tip="Share of technician dispatches that turned out to be unnecessary, charted week over week — shows whether triage accuracy is trending better or worse over time. Hover a point for its exact value.">?</span></div>
-        <div><span style="font-size: 20px; font-weight: 600;">12%</span> <span style="font-size: 13px; color: #1D6F3E;">&#9660; 22pt</span></div>
+        <div><span style="font-size: 20px; font-weight: 600;">12%</span></div>
       </div>
       ${renderTrend()}
     </div>
@@ -280,22 +284,31 @@ export const FLEET_DASHBOARD_PAGE = `<!doctype html>
       <span>Case#</span><span>Asset</span><span>Site</span><span>Sev</span><span>Root cause</span><span>Status</span><span>Age</span>
     </div>
 
-    <div id="caseRows">${allCases.map(renderCaseRow).join("")}</div>
+    <div id="caseRows">${openRows.map(renderCaseRow).join("")}</div>
+
+    <details style="margin-top: 16px; border-top: 1px solid #DEDAD2; padding-top: 12px;">
+      <summary style="cursor: pointer; font-size: 14px; font-weight: 600; color: #6B6A64; list-style: revert;">Closed cases (${closedRows.length})</summary>
+      <div style="margin-top: 10px;">
+        <div style="display: grid; grid-template-columns: 70px 100px 1fr 60px 220px 160px 60px; gap: 10px; padding: 8px 6px; font-size: 13px; font-weight: 600; color: #6B6A64; text-transform: uppercase; letter-spacing: 0.03em; border-bottom: 1px solid #DEDAD2;">
+          <span>Case#</span><span>Asset</span><span>Site</span><span>Sev</span><span>Root cause</span><span>Status</span><span>Age</span>
+        </div>
+        ${closedRows.length ? closedRows.map(renderCaseRow).join("") : `<div style="padding: 16px 6px; color: #8A8880;">No closed cases yet.</div>`}
+      </div>
+    </details>
   </div>
 
   <!-- TECHNICIAN VIEW -->
   <div style="background: #FFFFFF; border: 1px solid #DEDAD2; border-radius: 8px; padding: 18px 20px;">
     <div style="font-size: 14px; font-weight: 600; color: #4A4944; margin-bottom: 4px;">Technician view</div>
-    <div style="font-size: 13px; color: #8A8880; margin-bottom: 14px;">Role-gated, coaching record &mdash; not a public leaderboard.</div>
-    <div style="display: grid; grid-template-columns: 160px 130px 130px 1fr; gap: 10px; padding: 6px; font-size: 13px; font-weight: 600; color: #6B6A64; text-transform: uppercase; letter-spacing: 0.03em; border-bottom: 1px solid #DEDAD2;">
-      <span>Tech</span><span>Completion</span><span>2nd-visit</span><span>Retraining tags</span>
+    <div style="font-size: 13px; color: #8A8880; margin-bottom: 14px;">Role-gated, coaching record &mdash; not a public leaderboard. Click a technician to see their assigned appointments.</div>
+    <div style="display: grid; grid-template-columns: 160px 130px 1fr; gap: 10px; padding: 6px; font-size: 13px; font-weight: 600; color: #6B6A64; text-transform: uppercase; letter-spacing: 0.03em; border-bottom: 1px solid #DEDAD2;">
+      <span>Tech</span><span>Completion</span><span>Retraining tags</span>
     </div>
     ${techs
       .map(
-        (t) => `<div style="display:grid;grid-template-columns:160px 130px 130px 1fr;gap:10px;padding:10px 6px;font-size:15px;border-bottom:1px solid #F0EEE9;align-items:center;">
+        (t) => `<div class="caseRow" onclick="window.location.href='/fleet/technician?name=${encodeURIComponent(t.name)}'" style="display:grid;grid-template-columns:160px 130px 1fr;gap:10px;padding:10px 6px;font-size:15px;border-bottom:1px solid #F0EEE9;align-items:center;cursor:pointer;">
       <span>${t.name}</span>
       <span class="mono">${t.completion}</span>
-      <span class="mono">${t.secondVisit}</span>
       <span style="color:#6B6A64;font-size:14px;">${t.tags}</span>
     </div>`
       )
@@ -313,10 +326,67 @@ function filterCases(sev) {
     btn.style.color = active ? '#FFFFFF' : '#4A4944';
     btn.style.borderColor = active ? '#292826' : '#D8D5CC';
   });
-  document.querySelectorAll('.caseRow').forEach((row) => {
+  document.querySelectorAll('#caseRows .caseRow').forEach((row) => {
     row.style.display = sev === 'ALL' || row.dataset.sev === sev ? 'grid' : 'none';
   });
 }
 </script>
 </body>
 </html>`;
+}
+
+// Staff-facing drill-down from the Technician view table: all appointments
+// (cases) currently assigned to one technician.
+export function renderTechnicianAppointmentsPage(techName: string, caseClosed: boolean): string {
+  const tech = techs.find((t) => t.name === techName);
+  const assigned = allCases
+    .filter((c) => c.assignedTech === techName)
+    .map((c) => (c.id === "#1234" && caseClosed ? { ...c, status: "Closed" } : c));
+
+  return `<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>${techName || "Technician"} — Appointments — Field RCA</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Space+Mono:wght@400;500&display=swap">
+<style>
+  body { margin: 0; background: #F0EEEB; font-family: 'Space Grotesk', system-ui, sans-serif; color: #292826; }
+  a { color: #1E4D2B; }
+  a:hover { color: #163A20; }
+  .mono { font-family: 'Space Mono', monospace; }
+  .caseRow:hover { background: #FAFAF8; }
+</style>
+</head>
+<body>
+<div style="width: 100%; min-height: 100%; display: flex; flex-direction: column;">
+
+  <!-- HEADER -->
+  <div style="position: sticky; top: 0; z-index: 10; background: #F0EEEB; padding: 20px 40px 0;">
+    <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 14px;">
+      <img src="/base_logo.png" alt="Base" style="height: 48px; width: auto; display: block;">
+      <span style="width: 1px; height: 24px; background: #C9C6BD; display: inline-block;"></span>
+      <span style="font-size: 15px; color: #6B6A64; font-weight: 400;">Field RCA</span>
+    </div>
+    <a href="/fleet" style="font-size: 15px; color: #6B6A64; text-decoration: none;">&larr; Fleet RCA dashboard</a>
+    <div style="display: flex; align-items: baseline; gap: 12px; margin-top: 10px; padding-bottom: 20px;">
+      <span style="font-size: 24px; font-weight: 600;">${techName || "Unknown technician"}</span>
+      ${tech ? `<span style="font-size: 15px; color: #6B6A64;">${tech.completion} completion &middot; ${tech.tags}</span>` : ""}
+    </div>
+    <div style="height: 8px; background: #1E4D2B; margin: 0 -40px;"></div>
+  </div>
+
+  <!-- BODY -->
+  <div style="padding: 32px 40px 80px;">
+    <div style="background: #FFFFFF; border: 1px solid #DEDAD2; border-radius: 8px; padding: 18px 20px;">
+      <div style="font-size: 14px; font-weight: 600; color: #4A4944; margin-bottom: 14px;">Assigned appointments (${assigned.length})</div>
+      <div style="display: grid; grid-template-columns: 70px 100px 1fr 60px 220px 160px 60px; gap: 10px; padding: 8px 6px; font-size: 13px; font-weight: 600; color: #6B6A64; text-transform: uppercase; letter-spacing: 0.03em; border-bottom: 1px solid #DEDAD2;">
+        <span>Case#</span><span>Asset</span><span>Site</span><span>Sev</span><span>Root cause</span><span>Status</span><span>Age</span>
+      </div>
+      ${assigned.length ? assigned.map(renderCaseRow).join("") : `<div style="padding: 24px 6px; color: #8A8880;">No appointments currently assigned.</div>`}
+    </div>
+  </div>
+
+</div>
+</body>
+</html>`;
+}
