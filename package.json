@@ -10,7 +10,8 @@
   "scripts": {
     "build": "tsc",
     "start": "node dist/index.js",
-    "dev": "tsc --watch"
+    "dev": "tsc --watch",
+    "dashboard": "npm run build && node dist/dashboard-server.js"
   },
   "keywords": [
     "base",
