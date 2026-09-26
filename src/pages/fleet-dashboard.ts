@@ -52,7 +52,7 @@ function renderRootCauses(): string {
       (r) => `<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">
       <span class="mono" style="width:168px;flex-shrink:0;font-size:13px;color:#4A4944;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${r.label}</span>
       <div style="flex:1;height:10px;background:#EFEDE7;border-radius:3px;">
-        <div style="height:10px;background:#1E4D2B;border-radius:3px;width:${Math.round((r.count / r.max) * 100)}%;"></div>
+        <div style="height:10px;background:#4A4944;border-radius:3px;width:${Math.round((r.count / r.max) * 100)}%;"></div>
       </div>
       <span class="mono" style="width:20px;font-size:13px;color:#6B6A64;text-align:right;">${r.count}</span>
     </div>`
@@ -75,13 +75,55 @@ function renderFwClusters(): string {
 }
 
 function renderTrend(): string {
-  return trendVals
-    .map((v, i) => {
-      const h = Math.round((v / trendMax) * 80);
-      const opacity = 0.4 + (i / trendVals.length) * 0.6;
-      return `<div style="flex:1;background:#1E4D2B;opacity:${opacity};border-radius:2px 2px 0 0;height:${h}px;"></div>`;
+  const width = 300;
+  const height = 100;
+  const leftPad = 28;
+  const rightPad = 6;
+  const topPad = 8;
+  const bottomPad = 18;
+  const plotW = width - leftPad - rightPad;
+  const plotH = height - topPad - bottomPad;
+  const yMax = 40; // clean round scale above the 34% starting value
+  const n = trendVals.length;
+
+  const xFor = (i: number) => leftPad + (plotW * i) / (n - 1);
+  const yFor = (v: number) => topPad + plotH - (v / yMax) * plotH;
+
+  const gridVals = [0, 10, 20, 30, 40];
+  const gridLines = gridVals
+    .map((g) => {
+      const y = yFor(g);
+      return `<line x1="${leftPad}" y1="${y}" x2="${width - rightPad}" y2="${y}" stroke="#EFEDE7" stroke-width="1"></line>
+      <text x="${leftPad - 6}" y="${y + 3}" text-anchor="end" font-size="9" fill="#8A8880">${g}%</text>`;
     })
     .join("");
+
+  const points = trendVals.map((v, i) => ({ x: xFor(i), y: yFor(v), v }));
+  const linePoints = points.map((p) => `${p.x},${p.y}`).join(" ");
+
+  const dots = points
+    .map((p, i) => {
+      const weeksAgo = n - 1 - i;
+      const label = weeksAgo === 0 ? "now" : `${weeksAgo} week${weeksAgo === 1 ? "" : "s"} ago`;
+      return `<circle cx="${p.x}" cy="${p.y}" r="6" fill="#FFFFFF"></circle>
+      <circle cx="${p.x}" cy="${p.y}" r="4" fill="#2F6FED"><title>${label}: ${p.v}% false-pull rate</title></circle>`;
+    })
+    .join("");
+
+  const xTicks = points
+    .map((p, i) => {
+      const weeksAgo = n - 1 - i;
+      const label = weeksAgo === 0 ? "now" : `-${weeksAgo}w`;
+      return `<text x="${p.x}" y="${height - 4}" text-anchor="middle" font-size="9" fill="#8A8880">${label}</text>`;
+    })
+    .join("");
+
+  return `<svg viewBox="0 0 ${width} ${height}" style="width:100%;height:${height}px;overflow:visible;">
+    ${gridLines}
+    <polyline points="${linePoints}" fill="none" stroke="#2F6FED" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></polyline>
+    ${dots}
+    ${xTicks}
+  </svg>`;
 }
 
 const sevColors: Record<CaseRow["sev"], { bg: string; color: string }> = {
@@ -129,10 +171,39 @@ export const FLEET_DASHBOARD_PAGE = `<!doctype html>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Space+Mono:wght@400;500&display=swap">
 <style>
   body { margin: 0; background: #F0EEEB; font-family: 'Space Grotesk', system-ui, sans-serif; color: #292826; }
-  a { color: #1E4D2B; }
-  a:hover { color: #163A20; }
+  a { color: #2F6FED; }
+  a:hover { color: #1E4FBE; }
   .mono { font-family: 'Space Mono', monospace; }
   .caseRow:hover { background: #FAFAF8; }
+  .tip { position: relative; display: inline-flex; align-items: center; justify-content: center; width: 14px; height: 14px; border: 1px solid #2F6FED; border-radius: 50%; font-size: 10px; line-height: 1; color: #2F6FED; cursor: help; margin-left: 5px; }
+  .tip:hover::after {
+    content: attr(data-tip);
+    position: absolute;
+    bottom: 130%;
+    left: 50%;
+    transform: translateX(-50%);
+    background: #292826;
+    color: #FFFFFF;
+    padding: 8px 10px;
+    border-radius: 6px;
+    font-size: 13px;
+    font-weight: 400;
+    line-height: 1.4;
+    white-space: normal;
+    width: 220px;
+    z-index: 20;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+  }
+  .tip:hover::before {
+    content: '';
+    position: absolute;
+    bottom: 118%;
+    left: 50%;
+    transform: translateX(-50%);
+    border: 5px solid transparent;
+    border-top-color: #292826;
+    z-index: 20;
+  }
 </style>
 </head>
 <body>
@@ -142,38 +213,34 @@ export const FLEET_DASHBOARD_PAGE = `<!doctype html>
   <!-- HEADER -->
   <div style="position: sticky; top: 0; z-index: 10; background: #F0EEEB; padding: 20px 40px 0;">
     <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 14px;">
-      <img src="/base_logo.png" alt="Base" style="height: 34px; width: auto; display: block;">
-      <span style="width: 1px; height: 16px; background: #C9C6BD; display: inline-block;"></span>
+      <img src="/base_logo.png" alt="Base" style="height: 48px; width: auto; display: block;">
+      <span style="width: 1px; height: 24px; background: #C9C6BD; display: inline-block;"></span>
       <span style="font-size: 15px; color: #6B6A64; font-weight: 400;">Field RCA</span>
     </div>
     <div style="font-size: 24px; font-weight: 600; color: #292826;">Fleet RCA dashboard</div>
     <div style="font-size: 15px; color: #6B6A64; margin-top: 2px; padding-bottom: 20px;">Entry point into individual Cases &mdash; click a row to open its Case workspace.</div>
-    <div style="height: 4px; background: linear-gradient(90deg, #2F6FED, #1E4D2B); margin: 0 -40px;"></div>
+    <div style="height: 8px; background: #1E4D2B; margin: 0 -40px;"></div>
   </div>
 
   <!-- BODY -->
   <div style="padding: 32px 40px 80px;">
 
   <!-- KPI ROW -->
-  <div style="display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 14px; margin-bottom: 24px;">
+  <div style="display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; margin-bottom: 24px;">
     <div style="background: #FFFFFF; border: 1px solid #DEDAD2; border-radius: 8px; padding: 16px 18px;">
-      <div style="font-size: 13px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; color: #6B6A64;">False-pull rate</div>
-      <div style="font-size: 30px; font-weight: 600; margin-top: 6px;">12% <span style="font-size: 15px; color: #1D6F3E;">&#9660; 22pt</span></div>
-    </div>
-    <div style="background: #FFFFFF; border: 1px solid #DEDAD2; border-radius: 8px; padding: 16px 18px;">
-      <div style="font-size: 13px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; color: #6B6A64;">2nd-visit rate</div>
-      <div style="font-size: 30px; font-weight: 600; margin-top: 6px;">8% <span style="font-size: 15px; color: #1D6F3E;">&#9660; 3pt</span></div>
-    </div>
-    <div style="background: #FFFFFF; border: 1px solid #DEDAD2; border-radius: 8px; padding: 16px 18px;">
-      <div style="font-size: 13px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; color: #6B6A64;">Agent / eng agreement</div>
-      <div style="font-size: 30px; font-weight: 600; margin-top: 6px;">74% <span style="font-size: 15px; color: #1D6F3E;">&#9650; 5pt</span></div>
-    </div>
-    <div style="background: #FFFFFF; border: 1px solid #DEDAD2; border-radius: 8px; padding: 16px 18px;">
-      <div style="font-size: 13px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; color: #6B6A64;">Open cases</div>
+      <div style="font-size: 13px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; color: #6B6A64;">Open cases<span class="tip" data-tip="Cases currently active across the fleet — detected and not yet closed, at any severity or stage.">?</span></div>
       <div style="font-size: 30px; font-weight: 600; margin-top: 6px;">43</div>
     </div>
     <div style="background: #FFFFFF; border: 1px solid #DEDAD2; border-radius: 8px; padding: 16px 18px;">
-      <div style="font-size: 13px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; color: #6B6A64;">Median time-to-action</div>
+      <div style="font-size: 13px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; color: #6B6A64;">2nd-visit rate<span class="tip" data-tip="Share of cases that needed a second technician visit to actually resolve, instead of being closed on the first trip.">?</span></div>
+      <div style="font-size: 30px; font-weight: 600; margin-top: 6px;">8% <span style="font-size: 15px; color: #1D6F3E;">&#9660; 3pt</span></div>
+    </div>
+    <div style="background: #FFFFFF; border: 1px solid #DEDAD2; border-radius: 8px; padding: 16px 18px;">
+      <div style="font-size: 13px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; color: #6B6A64;">Agent / eng agreement<span class="tip" data-tip="Share of cases where the agent's root-cause hypothesis matched what the reviewing engineer concluded.">?</span></div>
+      <div style="font-size: 30px; font-weight: 600; margin-top: 6px;">74% <span style="font-size: 15px; color: #1D6F3E;">&#9650; 5pt</span></div>
+    </div>
+    <div style="background: #FFFFFF; border: 1px solid #DEDAD2; border-radius: 8px; padding: 16px 18px;">
+      <div style="font-size: 13px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; color: #6B6A64;">Median time-to-action<span class="tip" data-tip="Median time from a case being opened to the first human action on it — approve, reject, or dispatch.">?</span></div>
       <div style="font-size: 30px; font-weight: 600; margin-top: 6px;">2.1h <span style="font-size: 15px; color: #1D6F3E;">&#9660; 0.6h</span></div>
     </div>
   </div>
@@ -182,22 +249,22 @@ export const FLEET_DASHBOARD_PAGE = `<!doctype html>
   <div style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; margin-bottom: 24px;">
 
     <div style="background: #FFFFFF; border: 1px solid #DEDAD2; border-radius: 8px; padding: 16px 18px;">
-      <div style="font-size: 14px; font-weight: 600; color: #4A4944; margin-bottom: 12px;">Root-cause histogram</div>
+      <div style="font-size: 14px; font-weight: 600; color: #4A4944; margin-bottom: 12px;">Root-cause histogram<span class="tip" data-tip="Closed cases across the fleet, grouped by the confirmed root-cause classification — shows which failure modes are actually driving volume.">?</span></div>
       ${renderRootCauses()}
     </div>
 
     <div style="background: #FFFFFF; border: 1px solid #DEDAD2; border-radius: 8px; padding: 16px 18px;">
-      <div style="font-size: 14px; font-weight: 600; color: #4A4944; margin-bottom: 12px;">FW version clusters</div>
+      <div style="font-size: 14px; font-weight: 600; color: #4A4944; margin-bottom: 12px;">FW version clusters<span class="tip" data-tip="How many units in the fleet are running each firmware version — surfaces stale or unpatched clusters against the current allow-listed version.">?</span></div>
       ${renderFwClusters()}
       <div style="font-size: 13px; color: #8A8880; margin-top: 4px;">3.4.0 is the current allow-listed version</div>
     </div>
 
     <div style="background: #FFFFFF; border: 1px solid #DEDAD2; border-radius: 8px; padding: 16px 18px;">
-      <div style="font-size: 14px; font-weight: 600; color: #4A4944; margin-bottom: 12px;">False-pull rate &mdash; 8 week trend</div>
-      <div style="height: 90px; display: flex; align-items: flex-end; gap: 6px;">${renderTrend()}</div>
-      <div style="display: flex; justify-content: space-between; font-size: 13px; color: #8A8880; margin-top: 6px;">
-        <span>34%</span><span>12% (now)</span>
+      <div style="display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 4px;">
+        <div style="font-size: 14px; font-weight: 600; color: #4A4944;">False-pull rate &mdash; 8 week trend<span class="tip" data-tip="Share of technician dispatches that turned out to be unnecessary, charted week over week — shows whether triage accuracy is trending better or worse over time. Hover a point for its exact value.">?</span></div>
+        <div><span style="font-size: 20px; font-weight: 600;">12%</span> <span style="font-size: 13px; color: #1D6F3E;">&#9660; 22pt</span></div>
       </div>
+      ${renderTrend()}
     </div>
 
   </div>

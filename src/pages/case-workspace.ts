@@ -54,7 +54,7 @@ function renderDifferentials(): string {
           <span class="mono" style="color:#6B6A64;">${d.conf}%</span>
         </div>
         <div style="height:6px;background:#EFEDE7;border-radius:3px;">
-          <div style="height:6px;background:${d.primary ? "#1E4D2B" : "#C9C6BD"};border-radius:3px;width:${d.conf}%;"></div>
+          <div style="height:6px;background:${d.primary ? "#2F6FED" : "#C9C6BD"};border-radius:3px;width:${d.conf}%;"></div>
         </div>
       </div>`
     )
@@ -102,8 +102,8 @@ export const CASE_WORKSPACE_PAGE = `<!doctype html>
   <!-- HEADER -->
   <div id="stickyHeader" style="position: sticky; top: 0; z-index: 10; background: #F0EEEB; padding: 16px 40px 0;">
     <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 14px;">
-      <img src="/base_logo.png" alt="Base" style="height: 34px; width: auto; display: block;">
-      <span style="width: 1px; height: 16px; background: #C9C6BD; display: inline-block;"></span>
+      <img src="/base_logo.png" alt="Base" style="height: 48px; width: auto; display: block;">
+      <span style="width: 1px; height: 24px; background: #C9C6BD; display: inline-block;"></span>
       <span style="font-size: 15px; color: #6B6A64; font-weight: 400;">Field RCA</span>
     </div>
     <a href="/fleet" style="font-size: 15px; color: #6B6A64; text-decoration: none;">&larr; Open cases</a>
@@ -201,7 +201,7 @@ export const CASE_WORKSPACE_PAGE = `<!doctype html>
               <div style="font-size: 17px;"><span class="mono" style="font-weight: 600;">reboot_firmware</span> <span style="color: #6B6A64;">&middot; confidence 0.81 &middot; role required: ops</span></div>
               <div style="margin-top: 6px; font-size: 14px; font-weight: 600;"><span id="actionStatusLabelDiagnosis" style="color: #9A5B00;">Awaiting ops approval</span></div>
             </div>
-            <a href="#action" style="background: #B2DD79; color: #1E4D2B; border-radius: 6px; padding: 10px 16px; font-size: 15px; font-weight: 700; white-space: nowrap; text-decoration: none; display: inline-block;">Review in Action &rarr;</a>
+            <a href="#action" style="background: #2F6FED; color: #FFFFFF; border-radius: 6px; padding: 10px 16px; font-size: 15px; font-weight: 700; white-space: nowrap; text-decoration: none; display: inline-block;">Review in Action &rarr;</a>
           </div>
         </div>
 
@@ -341,7 +341,7 @@ export const CASE_WORKSPACE_PAGE = `<!doctype html>
     <!-- ACTION -->
     <div id="action" style="scroll-margin-top: 16px; margin-bottom: 48px;">
       <div style="font-size: 22px; font-weight: 600; margin-bottom: 16px;">Action</div>
-      <div style="display: grid; grid-template-columns: 220px minmax(0, 1fr); gap: 16px; align-items: start;">
+      <div style="display: flex; flex-direction: column; gap: 16px; align-items: stretch;">
         <div style="background: #FFFFFF; border: 1px solid #DEDAD2; border-radius: 8px; padding: 20px 24px;">
           <div style="font-size: 13px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; color: #6B6A64;">Current permission level</div>
           <div style="font-size: 26px; font-weight: 600; margin-top: 4px;">L2 &mdash; Supervised act</div>
