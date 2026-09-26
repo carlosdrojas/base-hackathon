@@ -2,13 +2,24 @@
 // `engine` is the single swap point: replace the MockResponseEngine with the real engine at
 // integration and nothing else changes.
 
+import "dotenv/config"; // ANTHROPIC_API_KEY switches the planner to Claude
 import type http from "node:http";
-import { MockResponseEngine, loadSeed } from "./mock-engine.js";
+import { fileURLToPath } from "node:url";
+import { FleetSim } from "../sim/fleet-sim.js";
+import { DefaultResponseEngine } from "./engine.js";
+import { StubHypothesisSource } from "./hypothesis-source.js";
+import { loadSeed } from "./seed.js";
 import type { GateResult, PlantableFault, ResponseEngine, User, VisitOutcome } from "./types.js";
 
-export const engine: ResponseEngine = new MockResponseEngine();
+const seed = loadSeed();
+const fleet = new FleetSim();
+export const engine: ResponseEngine = new DefaultResponseEngine(fleet, new StubHypothesisSource(fleet, seed.misdiagnose), {
+  runtimeDir: fileURLToPath(new URL("../../data/runtime", import.meta.url)),
+  planner: "auto",
+  seed,
+});
 
-const USERS: User[] = loadSeed().users;
+const USERS: User[] = [...seed.users, ...seed.drivers];
 const TICK_MS = 2000;
 const PLANTABLE: PlantableFault[] = [
   "fw_version_mismatch",
