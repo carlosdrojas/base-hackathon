@@ -3,6 +3,10 @@ import fs from "node:fs";
 import path from "node:path";
 import { CASE_WORKSPACE_PAGE } from "./pages/case-workspace.js";
 import { FLEET_DASHBOARD_PAGE } from "./pages/fleet-dashboard.js";
+import { createFieldRcaWorkspace } from "./field-rca/index.js";
+
+/** Field RCA auto-triage seam. Not the Issue Router mock fleet below. */
+const fieldRca = createFieldRcaWorkspace();
 
 const LOGO_PATH = path.join(process.cwd(), "public", "base_logo.png");
 const logoBuffer = fs.existsSync(LOGO_PATH) ? fs.readFileSync(LOGO_PATH) : null;
@@ -10,6 +14,11 @@ const logoBuffer = fs.existsSync(LOGO_PATH) ? fs.readFileSync(LOGO_PATH) : null;
 const PORT = Number(process.env.DASHBOARD_PORT ?? 4173);
 
 const server = http.createServer((req, res) => {
+  if (req.url === "/api/field-rca") {
+    res.writeHead(200, { "Content-Type": "application/json" });
+    res.end(JSON.stringify(fieldRca.describe()));
+    return;
+  }
   if (req.url === "/base_logo.png") {
     if (logoBuffer) {
       res.writeHead(200, { "Content-Type": "image/png" });
