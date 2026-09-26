@@ -269,6 +269,18 @@ function clientMain(): void {
     </div>`;
   }
 
+  // Level of the step the case is on now (the plan's max level is nearly always L4, because
+  // "send a tech" is the usual fallback). L0 cases always show L0.
+  function levelChips(gp: any): string {
+    if (gp.level === "L0") return chip("L0", LEVEL.L0);
+    const live = ["running", "awaiting_approval", "approved", "planned"];
+    const cur = gp.steps.find((s: any) => live.includes(s.state))
+      ?? [...gp.steps].reverse().find((s: any) => s.state === "done" || s.state === "failed");
+    const lvl = cur ? cur.level : gp.level;
+    const tail = lvl !== gp.level ? `<span style="color:#8A8880;font-size:12px;">up to ${esc(gp.level)}</span>` : "";
+    return `${chip("now " + lvl, LEVEL[lvl])}${tail}`;
+  }
+
   function renderCase(c: any, u: any): string {
     const h = c.hypothesis;
     const gp = c.gameplan;
@@ -279,7 +291,7 @@ function clientMain(): void {
         <span class="mono" style="color:#4A4944;">${esc(c.vin)}</span>
         <span style="color:#6B6A64;font-size:14px;">${esc(c.site)}</span>
         <span style="flex:1;"></span>
-        ${gp ? chip(gp.level, LEVEL[gp.level]) : ""}
+        ${gp ? levelChips(gp) : ""}
         ${chip(c.status, STATUS[c.status])}
       </div>
       ${h ? `<div style="font-size:14px;margin-top:6px;color:#4A4944;">

@@ -19,13 +19,16 @@ export interface BugGroup {
 
 const key = (fw: string, rc: string) => `${fw}|${rc}`;
 
-/** Groups of ≥3 open or closed cases sharing (fw_version, root_cause) that have no report yet. */
+/** Groups of ≥3 cases sharing (fw_version, root_cause), with no failed fix, that have no report yet. */
 export function findBugGroups(cases: RcaCase[], existing: BugReport[]): BugGroup[] {
   const reported = new Set(existing.map((r) => key(r.fw_version, r.root_cause)));
   const groups = new Map<string, BugGroup>();
   for (const c of cases) {
     const rc = c.hypothesis?.root_cause;
     if (!rc || rc === "unknown") continue;
+    // A failed remote fix means the diagnosis is suspect (e.g. a "soft fault" that was really a
+    // loose connector), so it isn't evidence of a firmware-wide problem.
+    if (c.gameplan?.steps.some((s) => s.state === "failed")) continue;
     const k = key(c.fw_version, rc);
     if (reported.has(k)) continue;
     const g = groups.get(k) ?? { fw_version: c.fw_version, root_cause: rc, cases: [] };
