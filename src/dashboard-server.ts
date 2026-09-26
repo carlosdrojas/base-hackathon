@@ -4,6 +4,8 @@ import path from "node:path";
 import { CASE_WORKSPACE_PAGE } from "./pages/case-workspace.js";
 import { FLEET_DASHBOARD_PAGE } from "./pages/fleet-dashboard.js";
 import { createFieldRcaWorkspace } from "./field-rca/index.js";
+import { RESPONSE_PAGE } from "./pages/response-page.js";
+import { handleResponseRoutes, startResponseEngine } from "./response/routes.js";
 
 /** Field RCA auto-triage seam. Not the Issue Router mock fleet below. */
 const fieldRca = createFieldRcaWorkspace();
@@ -13,7 +15,8 @@ const logoBuffer = fs.existsSync(LOGO_PATH) ? fs.readFileSync(LOGO_PATH) : null;
 
 const PORT = Number(process.env.DASHBOARD_PORT ?? 4173);
 
-const server = http.createServer((req, res) => {
+const server = http.createServer(async (req, res) => {
+  if (await handleResponseRoutes(req, res)) return;
   if (req.url === "/api/field-rca") {
     res.writeHead(200, { "Content-Type": "application/json" });
     res.end(JSON.stringify(fieldRca.describe()));
@@ -34,6 +37,11 @@ const server = http.createServer((req, res) => {
     res.end(CASE_WORKSPACE_PAGE);
     return;
   }
+  if (req.url === "/response") {
+    res.writeHead(200, { "Content-Type": "text/html" });
+    res.end(RESPONSE_PAGE);
+    return;
+  }
   if (req.url === "/fleet") {
     res.writeHead(200, { "Content-Type": "text/html" });
     res.end(FLEET_DASHBOARD_PAGE);
@@ -49,5 +57,6 @@ const server = http.createServer((req, res) => {
 });
 
 server.listen(PORT, () => {
+  startResponseEngine();
   console.log(`Fleet RCA dashboard running at http://localhost:${PORT}`);
 });
