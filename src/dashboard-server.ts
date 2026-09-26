@@ -1,6 +1,13 @@
 import "dotenv/config";
 import http from "node:http";
+import fs from "node:fs";
+import path from "node:path";
 import { ercotGet, API_BASE } from "./ercot-client.js";
+import { CASE_WORKSPACE_PAGE } from "./pages/case-workspace.js";
+import { FLEET_DASHBOARD_PAGE } from "./pages/fleet-dashboard.js";
+
+const LOGO_PATH = path.join(process.cwd(), "public", "base_logo.png");
+const logoBuffer = fs.existsSync(LOGO_PATH) ? fs.readFileSync(LOGO_PATH) : null;
 
 const PORT = Number(process.env.DASHBOARD_PORT ?? 4173);
 const HUB = "HB_WEST";
@@ -543,6 +550,7 @@ const PAGE = `<!doctype html>
 <div class="wrap">
   <h1>Issue Router — Live</h1>
   <p class="sub">Three independent detectors, one shared feed and router — proof this scales past a single hard-coded signal. The two market signals poll real ERCOT data every ${POLL_CACHE_MS / 1000}s; Fleet Health below uses <strong>mocked</strong> telemetry (we don't have access to Base's real fleet data) cross-checked against the real ERCOT signals above it.</p>
+  <p class="sub"><a href="/fleet">Fleet RCA dashboard</a> &middot; <a href="/case">Case workspace</a> &mdash; Field RCA case-triage UI (§8.1/§8.3 of the design doc), ported from the Claude Artifact mockup.</p>
   <div id="err" class="err" hidden></div>
 
   <section class="signal-block">
@@ -786,6 +794,26 @@ const server = http.createServer(async (req, res) => {
       res.writeHead(500, { "Content-Type": "application/json" });
       res.end(JSON.stringify({ error: error instanceof Error ? error.message : String(error) }));
     }
+    return;
+  }
+  if (req.url === "/base_logo.png") {
+    if (logoBuffer) {
+      res.writeHead(200, { "Content-Type": "image/png" });
+      res.end(logoBuffer);
+    } else {
+      res.writeHead(404);
+      res.end("logo not found");
+    }
+    return;
+  }
+  if (req.url === "/case") {
+    res.writeHead(200, { "Content-Type": "text/html" });
+    res.end(CASE_WORKSPACE_PAGE);
+    return;
+  }
+  if (req.url === "/fleet") {
+    res.writeHead(200, { "Content-Type": "text/html" });
+    res.end(FLEET_DASHBOARD_PAGE);
     return;
   }
   res.writeHead(200, { "Content-Type": "text/html" });

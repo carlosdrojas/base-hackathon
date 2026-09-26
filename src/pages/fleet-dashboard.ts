@@ -1,0 +1,255 @@
+// Plain HTML/CSS/vanilla-JS port of the Fleet RCA Dashboard Claude Artifact
+// mockup (Field RCA design doc §8.3). See case-workspace.ts for the sibling
+// Case Workspace port and porting notes.
+
+const rootCauseData = [
+  { label: "can_link_unreliable", count: 14, max: 14 },
+  { label: "fw_version_mismatch", count: 9, max: 14 },
+  { label: "install_commissioning_incomplete", count: 7, max: 14 },
+  { label: "no_fault_found", count: 6, max: 14 },
+  { label: "true_hardware_defect", count: 3, max: 14 },
+  { label: "thermal_or_safety_event", count: 2, max: 14 },
+  { label: "unknown", count: 2, max: 14 },
+];
+
+const fwClusterData = [
+  { version: "3.2.1", count: 18, max: 18, stale: true },
+  { version: "3.3.0", count: 9, max: 18, stale: true },
+  { version: "3.4.0", count: 6, max: 18, stale: false },
+];
+
+const trendVals = [34, 31, 29, 25, 22, 19, 15, 12];
+const trendMax = 34;
+
+interface CaseRow {
+  id: string;
+  asset: string;
+  site: string;
+  sev: "L0" | "L1" | "L2" | "L3" | "L4";
+  rootCause: string;
+  status: string;
+  age: string;
+}
+
+const allCases: CaseRow[] = [
+  { id: "#1234", asset: "INV-4021", site: "118 Maple Ct", sev: "L2", rootCause: "can_link_unreliable", status: "Investigating", age: "2h" },
+  { id: "#1235", asset: "COR-0092", site: "44 Birch Ln", sev: "L0", rootCause: "thermal_or_safety_event", status: "Escalated L0", age: "11m" },
+  { id: "#1229", asset: "INV-3987", site: "9 Larkspur Way", sev: "L1", rootCause: "install_commissioning_incomplete", status: "Awaiting engineer review", age: "1d" },
+  { id: "#1230", asset: "INV-4102", site: "118 Maple Ct", sev: "L3", rootCause: "fw_version_mismatch", status: "Action pending approval", age: "4h" },
+  { id: "#1231", asset: "COR-0071", site: "7 Cedar Ct", sev: "L4", rootCause: "true_hardware_defect", status: "Awaiting field visit", age: "3d" },
+  { id: "#1227", asset: "INV-3987", site: "9 Larkspur Way", sev: "L1", rootCause: "no_fault_found", status: "Closed", age: "6d" },
+];
+
+const techs = [
+  { name: "D. Osei", completion: "88%", secondVisit: "6%", tags: "connector-class refresher" },
+  { name: "R. Fenwick", completion: "95%", secondVisit: "3%", tags: "—" },
+  { name: "K. Nguyen", completion: "79%", secondVisit: "14%", tags: "install checklist, panel access" },
+];
+
+function renderRootCauses(): string {
+  return rootCauseData
+    .map(
+      (r) => `<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">
+      <span class="mono" style="width:168px;flex-shrink:0;font-size:13px;color:#4A4944;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${r.label}</span>
+      <div style="flex:1;height:10px;background:#EFEDE7;border-radius:3px;">
+        <div style="height:10px;background:#1E4D2B;border-radius:3px;width:${Math.round((r.count / r.max) * 100)}%;"></div>
+      </div>
+      <span class="mono" style="width:20px;font-size:13px;color:#6B6A64;text-align:right;">${r.count}</span>
+    </div>`
+    )
+    .join("");
+}
+
+function renderFwClusters(): string {
+  return fwClusterData
+    .map(
+      (f) => `<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;">
+      <span class="mono" style="width:60px;flex-shrink:0;font-size:14px;color:#292826;">${f.version}</span>
+      <div style="flex:1;height:14px;background:#EFEDE7;border-radius:3px;">
+        <div style="height:14px;background:${f.stale ? "#DC2626" : "#1E4D2B"};border-radius:3px;width:${Math.round((f.count / f.max) * 100)}%;"></div>
+      </div>
+      <span class="mono" style="width:24px;font-size:13px;color:#6B6A64;text-align:right;">${f.count}</span>
+    </div>`
+    )
+    .join("");
+}
+
+function renderTrend(): string {
+  return trendVals
+    .map((v, i) => {
+      const h = Math.round((v / trendMax) * 80);
+      const opacity = 0.4 + (i / trendVals.length) * 0.6;
+      return `<div style="flex:1;background:#1E4D2B;opacity:${opacity};border-radius:2px 2px 0 0;height:${h}px;"></div>`;
+    })
+    .join("");
+}
+
+const sevColors: Record<CaseRow["sev"], { bg: string; color: string }> = {
+  L0: { bg: "#FDECEC", color: "#B42318" },
+  L1: { bg: "#FFF3E0", color: "#9A5B00" },
+  L2: { bg: "#FFF3E0", color: "#9A5B00" },
+  L3: { bg: "#EAF1FF", color: "#1E4FBE" },
+  L4: { bg: "#EFEDE7", color: "#4A4944" },
+};
+
+function repeatTag(site: string): string {
+  const count = allCases.filter((c) => c.site === site).length;
+  return count > 1 ? " ⟳ repeat site" : "";
+}
+
+function renderCaseRow(c: CaseRow): string {
+  const sc = sevColors[c.sev];
+  return `<div class="caseRow" data-sev="${c.sev}" onclick="window.location.href='/case'" style="display:grid;grid-template-columns:70px 100px 1fr 60px 220px 160px 60px;gap:10px;padding:10px 6px;font-size:15px;border-bottom:1px solid #F0EEE9;align-items:center;cursor:pointer;">
+    <span class="mono">${c.id}</span>
+    <span class="mono">${c.asset}</span>
+    <span>${c.site} <span style="color:#9A5B00;font-size:13px;">${repeatTag(c.site)}</span></span>
+    <span style="background:${sc.bg};color:${sc.color};font-size:13px;font-weight:600;padding:2px 8px;border-radius:4px;width:fit-content;">${c.sev}</span>
+    <span class="mono" style="font-size:14px;color:#4A4944;">${c.rootCause}</span>
+    <span style="color:#4A4944;">${c.status}</span>
+    <span style="color:#8A8880;">${c.age}</span>
+  </div>`;
+}
+
+const severities = ["ALL", "L0", "L1", "L2", "L3", "L4"];
+
+function renderFilters(): string {
+  return severities
+    .map((s) => {
+      const active = s === "ALL";
+      return `<button class="sevFilter" data-sev="${s}" onclick="filterCases('${s}')" style="background:${active ? "#292826" : "#FFFFFF"};color:${active ? "#FFFFFF" : "#4A4944"};border:1px solid ${active ? "#292826" : "#D8D5CC"};border-radius:14px;padding:5px 12px;font-size:14px;font-weight:600;cursor:pointer;">${s}</button>`;
+    })
+    .join("");
+}
+
+export const FLEET_DASHBOARD_PAGE = `<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Fleet RCA Dashboard</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Space+Mono:wght@400;500&display=swap">
+<style>
+  body { margin: 0; background: #F0EEEB; font-family: 'Space Grotesk', system-ui, sans-serif; color: #292826; }
+  a { color: #1E4D2B; }
+  a:hover { color: #163A20; }
+  .mono { font-family: 'Space Mono', monospace; }
+  .caseRow:hover { background: #FAFAF8; }
+</style>
+</head>
+<body>
+
+<div style="width: 100%; min-height: 100%; display: flex; flex-direction: column;">
+
+  <!-- HEADER -->
+  <div style="position: sticky; top: 0; z-index: 10; background: #F0EEEB; padding: 20px 40px 0;">
+    <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 14px;">
+      <img src="/base_logo.png" alt="Base" style="height: 34px; width: auto; display: block;">
+      <span style="width: 1px; height: 16px; background: #C9C6BD; display: inline-block;"></span>
+      <span style="font-size: 15px; color: #6B6A64; font-weight: 400;">Field RCA</span>
+    </div>
+    <div style="font-size: 24px; font-weight: 600; color: #292826;">Fleet RCA dashboard</div>
+    <div style="font-size: 15px; color: #6B6A64; margin-top: 2px; padding-bottom: 20px;">Entry point into individual Cases &mdash; click a row to open its Case workspace.</div>
+    <div style="height: 4px; background: linear-gradient(90deg, #2F6FED, #1E4D2B); margin: 0 -40px;"></div>
+  </div>
+
+  <!-- BODY -->
+  <div style="padding: 32px 40px 80px;">
+
+  <!-- KPI ROW -->
+  <div style="display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 14px; margin-bottom: 24px;">
+    <div style="background: #FFFFFF; border: 1px solid #DEDAD2; border-radius: 8px; padding: 16px 18px;">
+      <div style="font-size: 13px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; color: #6B6A64;">False-pull rate</div>
+      <div style="font-size: 30px; font-weight: 600; margin-top: 6px;">12% <span style="font-size: 15px; color: #1D6F3E;">&#9660; 22pt</span></div>
+    </div>
+    <div style="background: #FFFFFF; border: 1px solid #DEDAD2; border-radius: 8px; padding: 16px 18px;">
+      <div style="font-size: 13px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; color: #6B6A64;">2nd-visit rate</div>
+      <div style="font-size: 30px; font-weight: 600; margin-top: 6px;">8% <span style="font-size: 15px; color: #1D6F3E;">&#9660; 3pt</span></div>
+    </div>
+    <div style="background: #FFFFFF; border: 1px solid #DEDAD2; border-radius: 8px; padding: 16px 18px;">
+      <div style="font-size: 13px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; color: #6B6A64;">Agent / eng agreement</div>
+      <div style="font-size: 30px; font-weight: 600; margin-top: 6px;">74% <span style="font-size: 15px; color: #1D6F3E;">&#9650; 5pt</span></div>
+    </div>
+    <div style="background: #FFFFFF; border: 1px solid #DEDAD2; border-radius: 8px; padding: 16px 18px;">
+      <div style="font-size: 13px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; color: #6B6A64;">Open cases</div>
+      <div style="font-size: 30px; font-weight: 600; margin-top: 6px;">43</div>
+    </div>
+    <div style="background: #FFFFFF; border: 1px solid #DEDAD2; border-radius: 8px; padding: 16px 18px;">
+      <div style="font-size: 13px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; color: #6B6A64;">Median time-to-action</div>
+      <div style="font-size: 30px; font-weight: 600; margin-top: 6px;">2.1h <span style="font-size: 15px; color: #1D6F3E;">&#9660; 0.6h</span></div>
+    </div>
+  </div>
+
+  <!-- CHARTS ROW -->
+  <div style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; margin-bottom: 24px;">
+
+    <div style="background: #FFFFFF; border: 1px solid #DEDAD2; border-radius: 8px; padding: 16px 18px;">
+      <div style="font-size: 14px; font-weight: 600; color: #4A4944; margin-bottom: 12px;">Root-cause histogram</div>
+      ${renderRootCauses()}
+    </div>
+
+    <div style="background: #FFFFFF; border: 1px solid #DEDAD2; border-radius: 8px; padding: 16px 18px;">
+      <div style="font-size: 14px; font-weight: 600; color: #4A4944; margin-bottom: 12px;">FW version clusters</div>
+      ${renderFwClusters()}
+      <div style="font-size: 13px; color: #8A8880; margin-top: 4px;">3.4.0 is the current allow-listed version</div>
+    </div>
+
+    <div style="background: #FFFFFF; border: 1px solid #DEDAD2; border-radius: 8px; padding: 16px 18px;">
+      <div style="font-size: 14px; font-weight: 600; color: #4A4944; margin-bottom: 12px;">False-pull rate &mdash; 8 week trend</div>
+      <div style="height: 90px; display: flex; align-items: flex-end; gap: 6px;">${renderTrend()}</div>
+      <div style="display: flex; justify-content: space-between; font-size: 13px; color: #8A8880; margin-top: 6px;">
+        <span>34%</span><span>12% (now)</span>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- OPEN CASES TABLE -->
+  <div style="background: #FFFFFF; border: 1px solid #DEDAD2; border-radius: 8px; padding: 18px 20px; margin-bottom: 24px;">
+    <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px;">
+      <div style="font-size: 14px; font-weight: 600; color: #4A4944;">Open cases</div>
+      <div id="sevFilters" style="display: flex; gap: 6px;">${renderFilters()}</div>
+    </div>
+
+    <div style="display: grid; grid-template-columns: 70px 100px 1fr 60px 220px 160px 60px; gap: 10px; padding: 8px 6px; font-size: 13px; font-weight: 600; color: #6B6A64; text-transform: uppercase; letter-spacing: 0.03em; border-bottom: 1px solid #DEDAD2;">
+      <span>Case#</span><span>Asset</span><span>Site</span><span>Sev</span><span>Root cause</span><span>Status</span><span>Age</span>
+    </div>
+
+    <div id="caseRows">${allCases.map(renderCaseRow).join("")}</div>
+  </div>
+
+  <!-- TECHNICIAN VIEW -->
+  <div style="background: #FFFFFF; border: 1px solid #DEDAD2; border-radius: 8px; padding: 18px 20px;">
+    <div style="font-size: 14px; font-weight: 600; color: #4A4944; margin-bottom: 4px;">Technician view</div>
+    <div style="font-size: 13px; color: #8A8880; margin-bottom: 14px;">Role-gated, coaching record &mdash; not a public leaderboard.</div>
+    <div style="display: grid; grid-template-columns: 160px 130px 130px 1fr; gap: 10px; padding: 6px; font-size: 13px; font-weight: 600; color: #6B6A64; text-transform: uppercase; letter-spacing: 0.03em; border-bottom: 1px solid #DEDAD2;">
+      <span>Tech</span><span>Completion</span><span>2nd-visit</span><span>Retraining tags</span>
+    </div>
+    ${techs
+      .map(
+        (t) => `<div style="display:grid;grid-template-columns:160px 130px 130px 1fr;gap:10px;padding:10px 6px;font-size:15px;border-bottom:1px solid #F0EEE9;align-items:center;">
+      <span>${t.name}</span>
+      <span class="mono">${t.completion}</span>
+      <span class="mono">${t.secondVisit}</span>
+      <span style="color:#6B6A64;font-size:14px;">${t.tags}</span>
+    </div>`
+      )
+      .join("")}
+  </div>
+
+  </div>
+</div>
+
+<script>
+function filterCases(sev) {
+  document.querySelectorAll('.sevFilter').forEach((btn) => {
+    const active = btn.dataset.sev === sev;
+    btn.style.background = active ? '#292826' : '#FFFFFF';
+    btn.style.color = active ? '#FFFFFF' : '#4A4944';
+    btn.style.borderColor = active ? '#292826' : '#D8D5CC';
+  });
+  document.querySelectorAll('.caseRow').forEach((row) => {
+    row.style.display = sev === 'ALL' || row.dataset.sev === sev ? 'grid' : 'none';
+  });
+}
+</script>
+</body>
+</html>`;
