@@ -1,0 +1,11 @@
+id: monitor_grid_home
+version: 1
+class: grid_or_home_side_condition
+max_level: L1
+action: mark_no_fault_found_monitor
+photos_required: []
+checklist:
+  - Treat the condition as grid or home side
+  - Keep the inverter in the field and monitor
+  - Do not schedule an HQ pull
+alerts: [engineer]

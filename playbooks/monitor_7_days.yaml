@@ -1,0 +1,11 @@
+id: monitor_7_days
+version: 1
+class: no_fault_found
+max_level: L1
+action: mark_no_fault_found_monitor
+photos_required: []
+checklist:
+  - Leave the unit in the field
+  - Watch for a repeat fault for 7 days
+  - Open a new case if the same signature returns
+alerts: [engineer]

@@ -1,0 +1,12 @@
+id: wiring_sense_photos
+version: 1
+class: install_wiring_or_sense_error
+max_level: L4
+action: dispatch_technician
+photos_required: [ct_orientation, connector_seating]
+checklist:
+  - Photograph CT orientation and the sense harness
+  - Correct polarity or reseat the missing rail
+  - Confirm grid sense is plausible after the fix
+  - Do not pull the inverter for a wiring error
+alerts: [tech, ops]

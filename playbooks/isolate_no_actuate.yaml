@@ -1,0 +1,11 @@
+id: isolate_no_actuate
+version: 1
+class: thermal_or_safety_event
+max_level: L0
+action: flag_l0_safety
+photos_required: []
+checklist:
+  - Isolate the unit
+  - Do not reboot, reflash, or try one more remote action
+  - Alert an engineer and ops
+alerts: [engineer, ops]

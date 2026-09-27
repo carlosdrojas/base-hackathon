@@ -1,0 +1,11 @@
+id: hq_recovery_after_field_playbook
+version: 1
+class: true_hardware_defect
+max_level: L4
+action: schedule_hq_recovery
+photos_required: []
+checklist:
+  - Confirm a reboot playbook and a reseat playbook already ran
+  - Confirm the fault is still present
+  - Schedule HQ recovery only after that field work failed
+alerts: [tech, ops, truck]

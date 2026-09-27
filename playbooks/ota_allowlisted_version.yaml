@@ -1,0 +1,12 @@
+id: ota_allowlisted_version
+version: 1
+class: fw_version_mismatch
+max_level: L3
+action: ota_allowlisted_fw
+photos_required: []
+checklist:
+  - Read the installed version and the hardware rev
+  - Choose a version from the signed manifest for that rev
+  - Stop for an engineer to approve the exact version
+  - Do not write, patch, or generate firmware
+alerts: [engineer]
