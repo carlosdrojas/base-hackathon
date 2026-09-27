@@ -69,3 +69,11 @@ test("driving the core fleet end to end never pulls do-not-return hardware", asy
   assert.equal(card.wrong_pulls, 0);
   assert.equal(card.dnr_kept, card.dnr_resolved);
 });
+
+test("the app fleet is real hardware only: 48 inventory units, no detector fixtures", () => {
+  const { units: _u, ...base } = loadSeed();
+  const pack = loadCorePack(base, DATA_INPUT_DIR, { includeFixtures: false });
+  assert.equal(pack.seed.units.length, 48);
+  assert.ok(pack.seed.units.every((u) => !u.vin.startsWith("BP-CORE-900")));
+  assert.equal(pack.seed.units.filter((u) => u.site.startsWith("Austin,")).length, 4);
+});

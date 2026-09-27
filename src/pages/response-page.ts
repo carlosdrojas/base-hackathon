@@ -139,7 +139,7 @@ function clientMain(): void {
   }
   async function refresh(force = false) {
     try {
-      state = await api("/api/response/state");
+      state = applyRegion(await api("/api/response/state"));
     } catch (e: any) {
       $("conn").textContent = "offline: " + e.message;
       return;
@@ -153,18 +153,60 @@ function clientMain(): void {
 
   // ------------------------------------------------------------------ render
 
+  // Austin / All Texas: a view filter over the one fleet, shared with /fleet via the arca_region cookie.
+  let region = "austin";
+  try { region = /(?:^|;\s*)arca_region=(texas|austin)/.exec(document.cookie)?.[1] ?? "austin"; } catch { /* no cookies */ }
+  const inRegion = (site: string | undefined) => region === "texas" || (site ?? "").startsWith("Austin,");
+
+  function applyRegion(full: any): any {
+    const fleet = full.fleet.filter((d: any) => inRegion(d.site));
+    const vins = new Set(fleet.map((d: any) => d.vin));
+    const cases = full.cases.filter((c: any) => vins.has(c.vin));
+    const ids = new Set(cases.map((c: any) => c.case_id));
+    const visits = full.visits.filter((v: any) => ids.has(v.case_id));
+    const count = (o: string) => cases.filter((c: any) => c.outcome === o).length;
+    const metrics = {
+      ...full.metrics,
+      open_cases: cases.filter((c: any) => c.status !== "Closed").length,
+      closed_cases: cases.filter((c: any) => c.status === "Closed").length,
+      fixed_remote: count("fixed_remote"),
+      avoided_false_pulls: count("avoided_false_pull"),
+      truck_rolls: visits.filter((v: any) => v.state === "completed").length,
+      gate_denials: cases.reduce((n: number, c: any) => n + c.timeline.filter((e: any) => e.kind === "gate_denied").length, 0),
+    };
+    let scorecard = full.scorecard;
+    if (scorecard) {
+      const pc = Object.fromEntries(Object.entries(scorecard.per_case).filter(([id]) => ids.has(id))) as Record<string, any>;
+      const vals = Object.values(pc);
+      const graded = vals.filter((v) => v.verdict !== "pending");
+      const dnr = graded.filter((v) => v.dnr);
+      scorecard = {
+        per_case: pc,
+        graded: graded.length,
+        matched: graded.filter((v) => v.verdict === "match").length,
+        pending: vals.length - graded.length,
+        dnr_resolved: dnr.length,
+        dnr_kept: dnr.filter((v) => !v.wrong_pull).length,
+        wrong_pulls: vals.filter((v) => v.wrong_pull).length,
+        extra_trucks: vals.filter((v) => v.extra_truck).length,
+        missed_pulls: vals.filter((v) => v.missed_pull).length,
+      };
+    }
+    return { ...full, fleet, cases, visits, metrics, scorecard };
+  }
+
   function render() {
     const u = me();
     renderHeader();
     $("metrics").innerHTML = renderMetrics();
     $("scorecard").innerHTML = renderScorecard();
     $("scorecard").style.display = state.scorecard ? "block" : "none";
-    const core = state.fleet_source === "core";
-    $("fleetTitle").innerHTML = core
-      ? `Base Core telemetry pack <span style="font-weight:400;color:#8A8880;">&middot; ${state.fleet.length} units from data_input/ &middot; diagnosed by the Task 1 detectors</span>`
-      : `Demo fleet <span style="font-weight:400;color:#8A8880;">&middot; ${state.fleet.length} hand-built inverters &middot; ${esc((state.fw_allowlist ?? ALLOWLIST)[0])} is allow-listed</span>`;
-    const fs = $("fleetSel") as HTMLSelectElement;
-    if (fs && state.fleet_source && fs.value !== state.fleet_source) fs.value = state.fleet_source;
+    $("fleetTitle").innerHTML = `${region === "texas" ? "All Texas" : "Austin"} <span style="font-weight:400;color:#8A8880;">&middot; ${state.fleet.length} Base Cores from the telemetry pack &middot; diagnosed by the Task 1 detectors</span>`;
+    document.querySelectorAll("[data-act=region]").forEach((b) => {
+      const on = (b as HTMLElement).dataset.region === region;
+      (b as HTMLElement).style.background = on ? "#1E4D2B" : "transparent";
+      (b as HTMLElement).style.color = on ? "#FFFFFF" : "#4A4944";
+    });
     $("fleet").innerHTML = renderFleet();
     const cases = [...state.cases].sort((a: any, b: any) => rank(a) - rank(b) || a.case_id.localeCompare(b.case_id));
     if (!selectedCase || !state.cases.some((c: any) => c.case_id === selectedCase)) selectedCase = cases[0]?.case_id ?? null;
@@ -539,15 +581,12 @@ function clientMain(): void {
     if (ev.key === "Escape" && openReport) { openReport = null; render(); }
   });
 
-  ($("fleetSel") as HTMLSelectElement).addEventListener("change", (ev) => {
-    const want = (ev.target as HTMLSelectElement).value;
-    if (want === state?.fleet_source) return;
-    if (confirm(`Switch to the ${want === "core" ? "Core telemetry pack" : "demo fleet"}? This resets all cases.`)) {
-      act("/api/response/reset", { fleet: want }, want === "core" ? "Switched to the Core telemetry pack" : "Switched to the demo fleet");
-    } else {
-      (ev.target as HTMLSelectElement).value = state?.fleet_source ?? "core";
-    }
-  });
+  document.querySelectorAll("[data-act=region]").forEach((b) => b.addEventListener("click", () => {
+    region = (b as HTMLElement).dataset.region === "texas" ? "texas" : "austin";
+    try { document.cookie = `arca_region=${region}; Path=/; SameSite=Lax`; } catch { /* no cookies */ }
+    selectedCase = null;
+    refresh(true);
+  }));
 
   refresh(true);
   setInterval(() => { if (!busy) refresh(); }, 2000);
@@ -567,7 +606,7 @@ function tourMain(): void {
     { target: "#metrics", title: "The scoreboard",
       body: "Fixed remotely = solved with no truck. Avoided false pulls = a tech found nothing wrong, so no healthy unit went back to HQ. Gate denials = unsafe or unauthorized actions the rules blocked. Hover the ? on any tile for its definition." },
     { target: "#fleetCard", title: "The fleet",
-      body: "Each tile is one inverter: green is healthy, red is faulted, dark red is a safety case. Stale firmware is flagged in red. The dropdown switches between the demo fleet and the Core telemetry pack. Use Plant fault on a healthy unit to create a new incident live, and Reset to seed to start the demo over." },
+      body: "Each tile is one inverter: green is healthy, red is faulted, dark red is a safety case. Stale firmware is flagged in red. The Austin / All Texas toggle changes which batteries you see here and on the Fleet page. Use Plant fault on a healthy unit to create a new incident live, and Reset to seed to start the demo over." },
     { target: "#scorecard", title: "Answer-key check",
       body: "The telemetry pack says what should happen to each unit: no truck, fix on site, or pull to HQ, and whether the hardware must stay in the field. As cases resolve, this grades the agent against that key. The agent never sees it. Hover a case's key chip to see why it matched or missed." },
     { target: ".caseCard", title: "A case",
@@ -822,10 +861,10 @@ export const RESPONSE_PAGE = `<!doctype html>
       <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px;">
         <div id="fleetTitle" class="panelTitle">Fleet</div>
         <div style="display: flex; align-items: center; gap: 8px;">
-          <select id="fleetSel" class="input" style="font-size: 13px;" title="Switch fleet (resets cases)">
-            <option value="core">Core telemetry pack</option>
-            <option value="demo">Demo fleet (12)</option>
-          </select>
+          <div id="regionToggle" style="display: flex; gap: 4px; background: #E6E3DB; padding: 4px; border-radius: 8px;" aria-label="Region">
+            <button type="button" data-act="region" data-region="austin" style="border: none; cursor: pointer; font: inherit; font-size: 13px; font-weight: 600; padding: 5px 12px; border-radius: 6px;">Austin</button>
+            <button type="button" data-act="region" data-region="texas" style="border: none; cursor: pointer; font: inherit; font-size: 13px; font-weight: 600; padding: 5px 12px; border-radius: 6px;">All Texas</button>
+          </div>
           <button class="btn btnGhost" data-act="reset">Reset to seed</button>
         </div>
       </div>

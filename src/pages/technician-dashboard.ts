@@ -31,7 +31,7 @@ const sevColors: Record<CaseRow["sev"], { bg: string; color: string }> = {
 // see case-workspace.ts's header comment for the full collision note).
 function deriveRow(c: RcaCase): CaseRow {
   return {
-    id: `austin:${c.case_id}`,
+    id: c.case_id,
     asset: c.vin,
     site: c.site,
     sev: c.status === "Escalated L0" ? "L0" : c.gameplan?.level ?? "L1",
@@ -81,9 +81,11 @@ function renderTechCaseRow(c: CaseRow): string {
 }
 
 export async function renderTechnicianDashboard(): Promise<string> {
+  // The technician account covers the Austin service area: same one engine, filtered to Austin.
   const openCases = austinEngine
     .getState()
-    .cases.map(deriveRow)
+    .cases.filter((c) => c.site.startsWith("Austin,"))
+    .map(deriveRow)
     .filter((c) => c.status !== "Closed");
 
   return `<!doctype html>

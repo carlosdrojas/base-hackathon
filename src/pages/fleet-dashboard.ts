@@ -368,7 +368,7 @@ function deriveAustinCaseRow(c: RcaCase): LiveCaseRow {
   const sev: CaseRow["sev"] = c.status === "Escalated L0" ? "L0" : c.gameplan?.level ?? "L1";
   const assignedTech = pickTechnician(rootCause, liveSeed).name;
   return {
-    id: `austin:${c.case_id}`,
+    id: c.case_id,
     asset: c.vin,
     site: c.site,
     sev,
@@ -421,7 +421,16 @@ function renderLiveCasesTable(rows: LiveCaseRow[]): string {
     <div style="display: grid; grid-template-columns: 150px 100px 1fr 60px 220px 160px 60px; gap: 10px; padding: 8px 6px; font-size: 13px; font-weight: 600; color: #6B6A64; text-transform: uppercase; letter-spacing: 0.03em; border-bottom: 1px solid #DEDAD2;">
       <span>Case#</span><span>Asset</span><span>Site</span><span>Sev</span><span>Root cause</span><span>Status</span><span>Age</span>
     </div>
-    <div id="liveCaseRows">${rows.length ? rows.map((c) => renderLiveCaseRow(c)).join("") : `<div style="padding: 16px 6px; color: #8A8880;">No open Austin cases yet.</div>`}</div>
+    <div id="liveCaseRows">${rows.length ? rows.map((c) => renderLiveCaseRow(c)).join("") : `<div style="padding: 16px 6px; color: #8A8880;">No open cases in this view yet.</div>`}</div>
+  </div>`;
+}
+
+/** Austin / All Texas view toggle. Same fleet and cases either way; only what is shown changes. */
+export function renderRegionToggle(region?: string): string {
+  const btn = (href: string, label: string, on: boolean) =>
+    `<a href="${href}" style="font-size: 14px; font-weight: 600; text-decoration: none; padding: 6px 14px; border-radius: 6px; ${on ? "background: #1E4D2B; color: #FFFFFF;" : "color: #4A4944;"}">${label}</a>`;
+  return `<div style="display: flex; gap: 4px; background: #E6E3DB; padding: 4px; border-radius: 8px;" aria-label="Region">
+    ${btn("/fleet/austin", "Austin", region === "Austin")}${btn("/fleet/texas", "All Texas", !region)}
   </div>`;
 }
 
@@ -430,11 +439,13 @@ export async function renderFleetDashboardPage(region?: string): Promise<string>
   // pack fleet filtered to units whose site starts with "Austin,"), so there is no region filter
   // to apply here any more; every case in it already is this region. `region` is kept as a param
   // only for the page title/heading and the map's inventory filter below.
+  // One engine for the whole fleet; the region (Austin vs All Texas) is only a view filter.
   const state = austinEngine.getState();
-  const cases = state.cases;
-  const rows = cases.map(deriveAustinCaseRow);
-  const openCasesKpi = String(state.metrics.open_cases);
   const mapUnits = region ? inventoryUnits.filter((u) => u.city === region) : inventoryUnits;
+  const regionVins = new Set(mapUnits.map((u) => u.vin));
+  const cases = state.cases.filter((c) => regionVins.has(c.vin));
+  const rows = cases.map(deriveAustinCaseRow);
+  const openCasesKpi = String(cases.filter((c) => c.status !== "Closed").length);
   const mapTitle = region ? `Fleet map &mdash; ${region}` : "Fleet map &mdash; Texas";
   const mapTip = region
     ? `Every real unit in data_input/inventory.csv whose city is ${region}. Red = faulted, green = healthy. inventory.csv only records city-level GPS (one coordinate per city, not per unit), so units are anchored to the real city centroid and spread in a small ring for legibility &mdash; the spread itself is not a real position.`
@@ -511,7 +522,10 @@ export async function renderFleetDashboardPage(region?: string): Promise<string>
       </nav>
       <div style="font-size: 13px; color: #8A8880;">Logged in as <strong style="color: #4A4944;">Staff-Austin</strong> &middot; <a href="/logout" style="color: #6B6A64;">Logout</a></div>
     </div>
-    <div style="font-size: 24px; font-weight: 600; color: #292826;">${heading}</div>
+    <div style="display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap;">
+      <div style="font-size: 24px; font-weight: 600; color: #292826;">${heading}</div>
+      ${renderRegionToggle(region)}
+    </div>
     <div style="font-size: 15px; color: #6B6A64; margin-top: 2px; padding-bottom: 20px;">Entry point into individual Cases &mdash; click a row to open its Case workspace.</div>
     <div style="height: 8px; background: #1E4D2B; margin: 0 -40px;"></div>
   </div>

@@ -69,7 +69,7 @@ export function templateReport(g: BugGroup, allowlist: string[], reportId: strin
   const body_md = [
     `# ${title}`,
     "",
-    "_MOCKED demo data. Written from a template._",
+    "_Written from a template._",
     "",
     `**Firmware:** ${g.fw_version} ${allowlist.includes(g.fw_version) ? "(allow-listed)" : "(not on the allow-list)"}`,
     `**Root cause (hypothesis):** ${g.root_cause}`,

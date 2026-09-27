@@ -4,6 +4,34 @@ An MCP (Model Context Protocol) server that gives an LLM agent tools to pull liv
 
 Built for **Track 1 — Open Grid Data** at the [Base Power & AITX Talent Hackathon](https://common-scooter-829.notion.site/Base-AITX-Talent-Hackathon-3e01e636288e80a7b914c993f90ae6c5).
 
+## ARCA: how it fits together
+
+ARCA (Automatic Root Cause Analysis) takes a faulted Base Core from "something's wrong" to "fixed, and proven fixed", and only rolls a truck or pulls hardware when it has to.
+
+```
+data_input/ telemetry pack ──► Task 1 detectors ──► Response engine ──► pages
+ (48 Cores, events, packets)    (diagnosis)          (plan → policy gate → approve
+                                                      → run → verify → escalate)
+```
+
+- **One fleet:** the 48 real inventory Cores in `data_input/` (synthetic, shaped like Base's hardware). Austin / All Texas is a view filter, not a separate fleet.
+- **One engine:** `src/response/routes.ts` builds a single `DefaultResponseEngine`. `/fleet`, `/case`, `/technician` and `/response` all read it, so a case number means the same case everywhere.
+- **One diagnosis:** the Task 1 detectors (`src/field-rca/detectors`) run on each unit's packet (`src/response/detector-hypothesis.ts`).
+- **Scoring:** `/response` grades outcomes against the pack's answer key (`inventory.csv` `recommended_action`, `do_not_return_hardware`). The agent never sees the key.
+
+| Area | Code | Built by |
+|---|---|---|
+| Telemetry pack, detectors, triage, field-rca contracts | `data_input/`, `src/field-rca/` | Megan |
+| Response engine, planner (Claude or playbook), policy gate, verifier, scheduler, fleet sim, scorecard, `/response` | `src/response/`, `src/sim/`, `src/pages/response-page.ts` | Carlos |
+| Login and roles, `/fleet`, `/case`, `/technician`, dashboard server | `src/pages/`, `src/session-store.ts`, `src/dashboard-server.ts` | Maria |
+
+Run it: `npm install && npm run dashboard`, open http://localhost:4173 and log in as `staff` / `basehq2026` (or `tech` / `basehq2026`). Add `ANTHROPIC_API_KEY` to `.env` to switch the planner from the playbook to Claude.
+
+**Known duplication (next steps):** there are two policy gates and playbooks. `src/response/` enforces approvals while fixes run; `src/field-rca/` recommends an action from a diagnosis. Merge them and align the action names. `/api/response-austin/*` and `austin:` case links are kept only as aliases. The 12-unit demo fleet (`data/sim-fleet.seed.json`) and the 9 detector fixtures remain in tests only.
+
+The ERCOT MCP server below is the team's earlier grid-data tool.
+
+
 ## 1. Register for an ERCOT Public API key (one-time, manual)
 
 ERCOT requires email verification, so this step has to be done by a human in a browser — it can't be scripted.

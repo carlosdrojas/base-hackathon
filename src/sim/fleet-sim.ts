@@ -318,6 +318,7 @@ export class FleetSim implements FleetGateway {
     return {
       vin: u.vin,
       asset_id: u.asset_id,
+      site: u.site,
       fw_version: u.fw_version,
       online: u.online,
       faulted: u.fault !== null,

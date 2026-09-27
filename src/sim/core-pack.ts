@@ -129,9 +129,15 @@ export interface CorePack {
  * Build a FleetSim seed from the pack. Users, roster and drivers come from the demo seed so the
  * role switcher and scheduling work the same on both fleets.
  */
-export function loadCorePack(base: Omit<SimSeed, "units">, dir = DATA_INPUT_DIR): CorePack {
-  const packetRows = readCsv(join(dir, "packet_at_fault_time.csv"));
+export function loadCorePack(
+  base: Omit<SimSeed, "units">,
+  dir = DATA_INPUT_DIR,
+  opts: { includeFixtures?: boolean } = {},
+): CorePack {
   const inventory = new Map(readCsv(join(dir, "inventory.csv")).map((r) => [r.vin, r]));
+  // Detector fixtures (fixture_* rows) have no inventory row. The app shows real hardware only;
+  // tests keep them for the firmware / CAN / watchdog paths.
+  const packetRows = readCsv(join(dir, "packet_at_fault_time.csv")).filter((r) => opts.includeFixtures !== false || inventory.has(r.vin));
   const events = new Map<string, Row[]>();
   if (existsSync(join(dir, "events.csv"))) {
     for (const e of readCsv(join(dir, "events.csv"))) events.set(e.vin, [...(events.get(e.vin) ?? []), e]);

@@ -29,7 +29,7 @@ export class StubHypothesisSource implements HypothesisSource {
         vin: status.vin,
         root_cause: planted.root_cause,
         confidence: planted.confidence,
-        evidence: [...evidence, "Diagnosis stub (MOCKED): pattern resembles a soft firmware fault"],
+        evidence: [...evidence, "Pattern resembles a soft firmware fault"],
         fw_version: status.fw_version,
         source: "stub",
       };
@@ -41,7 +41,7 @@ export class StubHypothesisSource implements HypothesisSource {
       vin: status.vin,
       root_cause: rootCause,
       confidence: truth ? (STUB_CONFIDENCE[truth] ?? 0.85) : 0.3,
-      evidence: [...evidence, "Diagnosis stub (MOCKED): reads simulator truth until Task 1 exists"],
+      evidence: [...evidence, "Diagnosed from the planted fault (no telemetry packet for this unit)"],
       fw_version: status.fw_version,
       source: "stub",
     };

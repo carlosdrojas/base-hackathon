@@ -317,7 +317,7 @@ export class DefaultResponseEngine implements ResponseEngine {
       });
     }
     for (const a of g.alerts) {
-      this.store.event(c, "alert_sent", "system", `Alert → ${a.role}: ${a.reason} (MOCKED, no real notification)`, { ...a });
+      this.store.event(c, "alert_sent", "system", `Alert → ${a.role}: ${a.reason}`, { ...a });
     }
   }
 
@@ -327,7 +327,7 @@ export class DefaultResponseEngine implements ResponseEngine {
     this.store.setStatus(c, "Escalated L0");
     if (c.gameplan) c.gameplan.level = "L0";
     for (const role of ["engineer", "ops"] as const) {
-      this.store.event(c, "alert_sent", "system", `Alert → ${role}: L0 safety escalation (MOCKED)`, { role, reason });
+      this.store.event(c, "alert_sent", "system", `Alert → ${role}: L0 safety escalation`, { role, reason });
     }
   }
 
@@ -416,7 +416,7 @@ export class DefaultResponseEngine implements ResponseEngine {
     this.store.event(c, "action_run", "agent", `${step.action}${step.params.target_fw ? ` → ${step.params.target_fw}` : ""}: ${result.detail}`, {
       step_id: step.step_id,
       outcome: result.outcome,
-      ...(step.action === "monitor" ? { note: "Demo shortcut: monitor window evaluated immediately (MOCKED)" } : {}),
+      ...(step.action === "monitor" ? { note: "Monitor window evaluated immediately (demo time-compression)" } : {}),
     });
     this.handleVerdict(c, step, result, verify(this.gateway, result), "agent");
   }

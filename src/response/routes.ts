@@ -1,7 +1,8 @@
-// HTTP routes for the Response Agent (design doc §11). Mounted by dashboard-server.ts.
-// Two fleets: "core" = the team's Base Core telemetry pack (data_input/, diagnosed by the
-// Task 1 detectors) and "demo" = the hand-built 12-unit fleet (data/sim-fleet.seed.json, stub
-// diagnosis). Pick the startup fleet with RESPONSE_FLEET=core|demo; switch live via /reset.
+// HTTP routes for the Response Agent (design doc §11, §16). Mounted by dashboard-server.ts.
+// ONE engine for the whole app: the team's Base Core telemetry pack (data_input/, 48 real
+// inventory units; detector fixtures excluded), diagnosed by the Task 1 detectors. /fleet, /case,
+// /technician and /response all read this engine; Austin vs All Texas is a view filter only.
+// /api/response-austin/* is kept as an alias (austin-routes.ts).
 
 import "dotenv/config"; // ANTHROPIC_API_KEY switches the planner to Claude
 import type http from "node:http";
@@ -14,40 +15,27 @@ import { DetectorHypothesisSource } from "./detector-hypothesis.js";
 import { DefaultResponseEngine } from "./engine.js";
 import { StubHypothesisSource } from "./hypothesis-source.js";
 import { loadSeed, type FleetSeed } from "./seed.js";
-import type { FleetSource, GateResult, PlantableFault, ResponseEngine, User, VisitOutcome } from "./types.js";
+import type { GateResult, PlantableFault, ResponseEngine, User, VisitOutcome } from "./types.js";
 
-const seed = loadSeed();
-const RUNTIME = fileURLToPath(new URL("../../data/runtime", import.meta.url));
+const seed = loadSeed(); // users, tech roster, drivers (shared with the demo fleet used in tests)
+const RUNTIME = fileURLToPath(new URL("../../data/runtime/core", import.meta.url));
 
-function build(source: FleetSource): ResponseEngine {
-  if (source === "demo") {
-    const fleet = new FleetSim({ runtimePath: join(RUNTIME, "demo", "sim-fleet.json") });
-    return new DefaultResponseEngine(fleet, new StubHypothesisSource(fleet, seed.misdiagnose), {
-      runtimeDir: join(RUNTIME, "demo"),
-      planner: "auto",
-      seed,
-      fleetSource: "demo",
-    });
-  }
+function build(): ResponseEngine {
   const { units: _units, ...base } = seed;
-  const pack = loadCorePack(base);
-  const fleet = new FleetSim({ seed: pack.seed, runtimePath: join(RUNTIME, "core", "sim-fleet.json") });
+  const pack = loadCorePack(base, DATA_INPUT_DIR, { includeFixtures: false });
+  const fleet = new FleetSim({ seed: pack.seed, runtimePath: join(RUNTIME, "sim-fleet.json") });
   const manifest = JSON.parse(readFileSync(join(DATA_INPUT_DIR, "fw_allowlist.json"), "utf8"));
   const diagnosis = new DetectorHypothesisSource(pack.packets, pack.events, manifest, new StubHypothesisSource(fleet, {}), fleet);
   return new DefaultResponseEngine(fleet, diagnosis, {
-    runtimeDir: join(RUNTIME, "core"),
+    runtimeDir: RUNTIME,
     planner: "auto",
     seed: pack.seed as FleetSeed,
     fleetSource: "core",
   });
 }
 
-// Default "demo": /fleet, /case and /technician treat /api/response/* as the demo fleet and read the
-// Core pack through the separate Austin engine (austin-routes.ts). The Core pack + answer-key
-// scorecard stay one dropdown away on /response, or start with RESPONSE_FLEET=core.
-let source: FleetSource = process.env.RESPONSE_FLEET === "core" ? "core" : "demo";
-/** The active engine. Reassigned when the UI switches fleets. */
-export let engine: ResponseEngine = build(source);
+/** The one engine every page reads. */
+export const engine: ResponseEngine = build();
 
 const USERS: User[] = [...seed.users, ...seed.drivers];
 const TICK_MS = 2000;
@@ -157,12 +145,6 @@ export async function handleResponseRoutes(req: http.IncomingMessage, res: http.
         return true;
       }
       case "/api/response/reset": {
-        const want = str(body, "fleet", true);
-        if (want && want !== "core" && want !== "demo") throw new HttpError(400, `unknown fleet "${want}"`);
-        if (want && want !== source) {
-          source = want as FleetSource;
-          engine = build(source);
-        }
         await engine.reset();
         await engine.ingestFaults();
         send(res, 200, { ok: true });

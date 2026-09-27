@@ -188,7 +188,7 @@ function relativeAge(iso: string): string {
 function renderCaseListRow(c: RcaCase): string {
   const sev = c.status === "Escalated L0" ? "L0" : (c.gameplan?.level ?? "L1");
   const rootCause = c.hypothesis?.root_cause ?? "unknown";
-  const href = `/case?case_id=${encodeURIComponent(`${AUSTIN_PREFIX}${c.case_id}`)}`;
+  const href = `/case?case_id=${encodeURIComponent(c.case_id)}`;
   return `<div class="caseRow" onclick="window.location.href='${href}'" style="display:grid;grid-template-columns:150px 100px 1fr 60px 220px 160px 60px;gap:10px;padding:10px 6px;font-size:15px;border-bottom:1px solid #F0EEE9;align-items:center;cursor:pointer;">
     <span class="mono" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(c.case_id)}</span>
     <span class="mono" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(c.vin)}</span>
@@ -325,10 +325,12 @@ export async function renderCaseWorkspacePage(caseId: string | undefined, role: 
   // See the file header comment for the full collision note: "austin:" is checked first and
   // stripped before lookup; an unprefixed id only ever resolves against Carlos's engine (never
   // against austinEngine), so the two never get mixed up despite minting the same id sequence.
-  const isAustin = caseId.startsWith(AUSTIN_PREFIX);
-  const rawCaseId = isAustin ? caseId.slice(AUSTIN_PREFIX.length) : caseId;
-  const activeEngine: ResponseEngine = isAustin ? austinEngine : engine;
-  const apiPrefix = isAustin ? "/api/response-austin" : "/api/response";
+  // One engine for the whole app now. Old "austin:"-prefixed links still work: the prefix is
+  // just stripped (it only existed to pick between two engines that numbered cases separately).
+  const isAustin = true; // every case comes from the one real-fleet engine
+  const rawCaseId = caseId.startsWith(AUSTIN_PREFIX) ? caseId.slice(AUSTIN_PREFIX.length) : caseId;
+  const activeEngine: ResponseEngine = engine;
+  const apiPrefix = "/api/response";
 
   const c = activeEngine.getState().cases.find((x) => x.case_id === rawCaseId);
 
@@ -336,7 +338,7 @@ export async function renderCaseWorkspacePage(caseId: string | undefined, role: 
     // Only fall back to Megan's old stateless pipeline for a bare (non-"austin:") id — an
     // explicit austin: link that doesn't resolve is a bad/stale link, not a cue to search a
     // third, different dataset by the same raw id.
-    const fr = !isAustin ? await getFieldRcaCase(rawCaseId) : undefined;
+    const fr = caseId.startsWith(AUSTIN_PREFIX) ? undefined : await getFieldRcaCase(rawCaseId);
     if (fr) return renderFieldRcaCase(fr, role);
     return `<!doctype html>
 <html lang="en">
@@ -386,7 +388,7 @@ ${HEAD}
     </div>`
   ).join("");
 
-  const displayCaseId = isAustin ? `${AUSTIN_PREFIX}${c.case_id}` : c.case_id;
+  const displayCaseId = c.case_id;
 
   return `<!doctype html>
 <html lang="en">

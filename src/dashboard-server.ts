@@ -179,7 +179,7 @@ const server = http.createServer(async (req, res) => {
   }
 
   // --- Staff-only pages ---
-  if (pathname === "/" || pathname === "/fleet" || pathname === "/fleet/technician" || pathname === "/fleet/austin") {
+  if (pathname === "/" || pathname === "/fleet" || pathname === "/fleet/technician" || pathname === "/fleet/austin" || pathname === "/fleet/texas") {
     if (role !== "staff") {
       redirect(res, homeFor(role));
       return;
@@ -193,13 +193,15 @@ const server = http.createServer(async (req, res) => {
       html(res, renderTechnicianAppointmentsPage(query.get("name") ?? ""));
       return;
     }
-    if (pathname === "/fleet/austin") {
-      html(res, await renderFleetDashboardPage("Austin"));
+    // Region is a view filter over the one fleet. Remembered in a cookie so /fleet and /response
+    // show the same batteries; Austin is the default.
+    if (pathname === "/fleet/austin" || pathname === "/fleet/texas") {
+      res.setHeader("Set-Cookie", `arca_region=${pathname === "/fleet/texas" ? "texas" : "austin"}; Path=/; SameSite=Lax`);
+      html(res, await renderFleetDashboardPage(pathname === "/fleet/texas" ? undefined : "Austin"));
       return;
     }
-    // Austin-only now (Houston dropped) — /fleet itself lands on Austin,
-    // this dashboard's one and only region.
-    redirect(res, "/fleet/austin");
+    const regionCookie = /(?:^|;\s*)arca_region=(texas|austin)/.exec(req.headers.cookie ?? "")?.[1];
+    redirect(res, regionCookie === "texas" ? "/fleet/texas" : "/fleet/austin");
     return;
   }
 

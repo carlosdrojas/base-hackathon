@@ -95,6 +95,7 @@ export interface ActionRecord {
 export interface DeviceStatus {
   vin: string;
   asset_id: string;
+  site?: string; // "City, TX (site type)"; lets pages filter by region
   fw_version: string;
   online: boolean;
   faulted: boolean;
@@ -335,7 +336,10 @@ export interface Scorecard {
   wrong_pulls: number; //     HQ pulls on do-not-return units
   extra_trucks: number; //    tech visits where the key said no truck was needed
   missed_pulls: number; //    key says pull, case resolved without one
-  per_case: Record<string, { recommended_action: string; expect: AnswerKey["expect"]; verdict: Verdict; note: string }>;
+  per_case: Record<string, {
+    recommended_action: string; expect: AnswerKey["expect"]; verdict: Verdict; note: string;
+    dnr: boolean; wrong_pull: boolean; extra_truck: boolean; missed_pull: boolean;
+  }>;
 }
 
 /** The only API the UI / routes call. */

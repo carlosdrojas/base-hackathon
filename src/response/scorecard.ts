@@ -22,7 +22,10 @@ export function computeScorecard(
     anyKey = true;
     const pulled = (c.gameplan?.steps ?? []).some((s) => s.action === "hq_recovery" && s.state === "done");
     const truck = visits.some((v) => v.case_id === c.case_id && v.kind === "tech_visit" && v.state === "completed");
-    const base = { recommended_action: key.recommended_action, expect: key.expect };
+    const base = {
+      recommended_action: key.recommended_action, expect: key.expect, dnr: key.do_not_return_hardware,
+      wrong_pull: pulled && key.do_not_return_hardware, extra_truck: false, missed_pull: false,
+    };
 
     if (pulled && key.do_not_return_hardware) card.wrong_pulls++;
     if (!RESOLVED.has(c.status) && !pulled) {
@@ -37,7 +40,7 @@ export function computeScorecard(
     if (key.expect === "pull") {
       verdict = pulled ? "match" : "miss";
       note = pulled ? "pulled to HQ, as the key says" : "key says this unit should come back to HQ";
-      if (!pulled) card.missed_pulls++;
+      if (!pulled) { card.missed_pulls++; base.missed_pull = true; }
     } else if (pulled) {
       verdict = "miss";
       note = "pulled hardware the key says to keep in the field";
@@ -45,6 +48,7 @@ export function computeScorecard(
       verdict = "miss";
       note = "fixed, but rolled a truck the key says wasn't needed";
       card.extra_trucks++;
+      base.extra_truck = true;
     } else {
       verdict = "match";
       note = key.expect === "no_truck" ? "resolved with no truck roll" : "fixed on site, hardware kept";
