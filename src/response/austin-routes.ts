@@ -1,9 +1,15 @@
 // HTTP routes for the Austin response engine -- a second, independent instantiation of
-// Carlos's real DefaultResponseEngine (see engine.ts), running over a real Austin fleet
-// (see austin-seed.ts) instead of his simulated one. Mirrors routes.ts's shape closely but
-// does not edit it: routes.ts's own `engine` singleton and /api/response/* routes are
-// untouched and keep meaning Carlos's simulated fleet only. Mounted by dashboard-server.ts
-// at a distinct prefix, /api/response-austin/*.
+// Carlos's real DefaultResponseEngine (see engine.ts), scoped to the Austin units within
+// Carlos's own Core telemetry pack fleet (src/sim/core-pack.ts, src/response/routes.ts's
+// "core" build() branch) rather than the bespoke hand-built Austin fleet this file used to
+// construct. Same pipeline routes.ts's toggleable `engine` uses in "core" mode (loadCorePack +
+// DetectorHypothesisSource -- Megan's real detectors, never reads scenario/answer_key), filtered
+// down to only the 4 real Austin inventory units (excludes Carlos's 9 synthetic detector-fixture
+// units, which have no real inventory row at all -- per product decision, this dashboard shows
+// real hardware only, none of his test fixtures). Run as its OWN dedicated, always-on instance so
+// /fleet/austin isn't affected if someone flips /response's fleet switcher back to "demo". Mirrors routes.ts's
+// shape closely but does not edit it: routes.ts's own `engine` singleton and /api/response/*
+// routes are untouched. Mounted by dashboard-server.ts at a distinct prefix, /api/response-austin/*.
 //
 // case_id collision note: CaseStore.newCaseId() (case-store.ts, untouched) mints "RCA-0001",
 // "RCA-0002", ... independently per engine instance, so this engine's cases WILL collide with
@@ -12,28 +18,39 @@
 // technician-dashboard.ts / case-workspace.ts / dashboard-server.ts), not here.
 import "dotenv/config"; // ANTHROPIC_API_KEY switches the planner to Claude, same as routes.ts
 import type http from "node:http";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
+import { fileURLToPath } from "node:url";
+import { DATA_INPUT_DIR, loadCorePack, readCsv } from "../sim/core-pack.js";
 import { FleetSim } from "../sim/fleet-sim.js";
 import { DefaultResponseEngine } from "./engine.js";
-import { AustinHypothesisSource } from "./austin-hypothesis-source.js";
-import { AUSTIN_RUNTIME_DIR, AUSTIN_RUNTIME_FLEET_PATH, AUSTIN_SEED_PATH, writeAustinSeedFile } from "./austin-seed.js";
-import { loadSeed } from "./seed.js";
+import { DetectorHypothesisSource } from "./detector-hypothesis.js";
+import { StubHypothesisSource } from "./hypothesis-source.js";
+import { loadSeed, type FleetSeed } from "./seed.js";
 import type { GateResult, ResponseEngine, User, VisitOutcome } from "./types.js";
 
-// Regenerate the Austin seed fresh from data_input/*.csv on every process start, so it always
-// reflects the current fixture CSVs (see austin-seed.ts's header comment for why this can't
-// just be a static hand-authored JSON file).
-const { skipped } = writeAustinSeedFile(AUSTIN_SEED_PATH);
-for (const s of skipped) {
-  console.warn(`[austin-seed] left ${s.vin} out of the Austin seed: ${s.reason}`);
-}
+const AUSTIN_RUNTIME_DIR = fileURLToPath(new URL("../../data/runtime-austin", import.meta.url));
 
-const seed = loadSeed(AUSTIN_SEED_PATH);
-const fleet = new FleetSim({ seedPath: AUSTIN_SEED_PATH, runtimePath: AUSTIN_RUNTIME_FLEET_PATH });
+const seed = loadSeed();
+const { units: _demoUnits, ...base } = seed;
+const pack = loadCorePack(base);
+// The Core pack is fleet-wide (48 real inventory units + 9 detector fixtures, the latter with
+// no real inventory row -- core-pack.ts defaults their site to "Austin, TX (detector fixture)"
+// purely as a placeholder, not because they're actually sited there). This dashboard shows only
+// the 4 genuinely real Austin inventory units, so filter against inventory.csv's own VIN set
+// directly rather than trusting the site string (which the fixtures' placeholder would also
+// match) -- excludes every synthetic fixture, keeps only real, Austin-located hardware.
+const realInventoryVins = new Set(readCsv(join(DATA_INPUT_DIR, "inventory.csv")).map((r) => r.vin));
+const austinUnits = pack.seed.units.filter((u) => u.site.startsWith("Austin,") && realInventoryVins.has(u.vin));
+const fleet = new FleetSim({ seed: { ...pack.seed, units: austinUnits }, runtimePath: join(AUSTIN_RUNTIME_DIR, "austin-fleet.json") });
+const manifest = JSON.parse(readFileSync(join(DATA_INPUT_DIR, "fw_allowlist.json"), "utf8"));
+const diagnosis = new DetectorHypothesisSource(pack.packets, pack.events, manifest, new StubHypothesisSource(fleet, {}), fleet);
 
-export const austinEngine: ResponseEngine = new DefaultResponseEngine(fleet, new AustinHypothesisSource(), {
+export const austinEngine: ResponseEngine = new DefaultResponseEngine(fleet, diagnosis, {
   runtimeDir: AUSTIN_RUNTIME_DIR,
   planner: "auto",
-  seed,
+  seed: pack.seed as FleetSeed,
+  fleetSource: "core",
 });
 
 const USERS: User[] = [...seed.users, ...seed.drivers];

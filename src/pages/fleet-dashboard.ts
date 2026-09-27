@@ -5,10 +5,11 @@
 // The main "Cases" table, KPI, and root-cause histogram below are backed by a real, STATEFUL
 // response engine over the real Austin fleet: src/response/austin-routes.ts's `austinEngine`, a
 // second instantiation of Carlos's real DefaultResponseEngine (src/response/engine.ts) running
-// against real Austin units (src/response/austin-seed.ts, built from data_input/inventory.csv +
-// packet_at_fault_time.csv) and a real (non-stub) Task 1 hypothesis source
-// (src/response/austin-hypothesis-source.ts) that re-runs Megan's field-rca detectors + triage
-// fresh per diagnosis. Approve/reject/close on these cases are real actions (see case-workspace.ts).
+// Carlos's own Core telemetry pack pipeline (src/sim/core-pack.ts + src/response/detector-hypothesis.ts
+// -- the same "core" fleet build() in src/response/routes.ts uses for /response's fleet switcher),
+// filtered to Austin-sited units, with a real (non-stub) Task 1 hypothesis source that re-runs
+// Megan's field-rca detectors fresh per diagnosis. Approve/reject/close on these cases are real
+// actions (see case-workspace.ts).
 //
 // This supersedes the page's previous data source, Megan's stateless field-rca pipeline
 // (src/pages/field-rca-cases.ts, still exported and still used as a read-only fallback in
@@ -31,7 +32,6 @@ import fs from "node:fs";
 import path from "node:path";
 import { engine } from "../response/routes.js";
 import { austinEngine } from "../response/austin-routes.js";
-import { AUSTIN_SEED_PATH } from "../response/austin-seed.js";
 import { pickTechnician } from "../response/scheduler.js";
 import { loadSeed, type FleetSeed } from "../response/seed.js";
 import type { RcaCase } from "../response/types.js";
@@ -203,7 +203,7 @@ function renderFleetMap(units: InventoryUnit[], region?: string): string {
 }
 
 // Root-cause tally over real austinEngine RcaCase objects (c.hypothesis.root_cause), not the old
-// FieldRcaCaseView pipeline output — same taxonomy either way (see austin-seed.ts's header note).
+// FieldRcaCaseView pipeline output — same taxonomy either way.
 function rootCauseTally(cases: RcaCase[]): { label: string; count: number; max: number }[] {
   const tally = new Map<string, number>();
   for (const c of cases) {
@@ -326,7 +326,6 @@ interface LiveCaseRow {
 }
 
 let liveSeed: FleetSeed | null = null;
-let austinSeed: FleetSeed | null = null;
 
 // Maps one of Carlos's real RcaCase objects onto our own row concepts.
 // Used only by renderTechnicianAppointmentsPage below now — the main /fleet
@@ -361,10 +360,13 @@ function deriveLiveCaseRow(c: RcaCase): LiveCaseRow {
 // least one case. The prefix is stripped back off in case-workspace.ts's lookup — see its
 // header comment for the full collision note.
 function deriveAustinCaseRow(c: RcaCase): LiveCaseRow {
-  austinSeed ??= loadSeed(AUSTIN_SEED_PATH);
+  // Carlos's Core-pack build reuses the same demo seed file for users/tech_roster/drivers
+  // (see core-pack.ts's loadCorePack doc comment), so this is the same loadSeed() liveSeed
+  // above already reads -- one shared roster, no separate Austin seed file anymore.
+  liveSeed ??= loadSeed();
   const rootCause = c.hypothesis?.root_cause ?? "unknown";
   const sev: CaseRow["sev"] = c.status === "Escalated L0" ? "L0" : c.gameplan?.level ?? "L1";
-  const assignedTech = pickTechnician(rootCause, austinSeed).name;
+  const assignedTech = pickTechnician(rootCause, liveSeed).name;
   return {
     id: `austin:${c.case_id}`,
     asset: c.vin,
@@ -377,10 +379,17 @@ function deriveAustinCaseRow(c: RcaCase): LiveCaseRow {
   };
 }
 
-function renderLiveCaseRow(c: LiveCaseRow): string {
+// showId/clickable default to the real Austin Cases table's behavior (a real case_id worth
+// showing and navigating to). The Technician-view appointments table (Carlos's simulated fleet,
+// not part of the demo) passes both false: its case_id isn't demo-relevant, and clicking through
+// would land on Carlos's own /case page, a different off-demo system — that's more confusing,
+// not less, so those rows are plain and non-interactive instead.
+function renderLiveCaseRow(c: LiveCaseRow, opts: { showId: boolean; clickable: boolean } = { showId: true, clickable: true }): string {
   const sc = sevColors[c.sev];
-  return `<div class="caseRow" data-sev="${c.sev}" onclick="window.location.href='/case?case_id=${encodeURIComponent(c.id)}'" style="display:grid;grid-template-columns:150px 100px 1fr 60px 220px 160px 60px;gap:10px;padding:10px 6px;font-size:15px;border-bottom:1px solid #F0EEE9;align-items:center;cursor:pointer;">
-    <span class="mono" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${c.id}</span>
+  const cols = opts.showId ? "150px 100px 1fr 60px 220px 160px 60px" : "100px 1fr 60px 220px 160px 60px";
+  const click = opts.clickable ? ` onclick="window.location.href='/case?case_id=${encodeURIComponent(c.id)}'"` : "";
+  return `<div class="caseRow" data-sev="${c.sev}"${click} style="display:grid;grid-template-columns:${cols};gap:10px;padding:10px 6px;font-size:15px;border-bottom:1px solid #F0EEE9;align-items:center;${opts.clickable ? "cursor:pointer;" : ""}">
+    ${opts.showId ? `<span class="mono" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${c.id}</span>` : ""}
     <span class="mono" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${c.asset}</span>
     <span>${c.site}</span>
     <span style="background:${sc.bg};color:${sc.color};font-size:13px;font-weight:600;padding:2px 8px;border-radius:4px;width:fit-content;">${c.sev}</span>
@@ -412,15 +421,15 @@ function renderLiveCasesTable(rows: LiveCaseRow[]): string {
     <div style="display: grid; grid-template-columns: 150px 100px 1fr 60px 220px 160px 60px; gap: 10px; padding: 8px 6px; font-size: 13px; font-weight: 600; color: #6B6A64; text-transform: uppercase; letter-spacing: 0.03em; border-bottom: 1px solid #DEDAD2;">
       <span>Case#</span><span>Asset</span><span>Site</span><span>Sev</span><span>Root cause</span><span>Status</span><span>Age</span>
     </div>
-    <div id="liveCaseRows">${rows.length ? rows.map(renderLiveCaseRow).join("") : `<div style="padding: 16px 6px; color: #8A8880;">No open Austin cases yet.</div>`}</div>
+    <div id="liveCaseRows">${rows.length ? rows.map((c) => renderLiveCaseRow(c)).join("") : `<div style="padding: 16px 6px; color: #8A8880;">No open Austin cases yet.</div>`}</div>
   </div>`;
 }
 
 export async function renderFleetDashboardPage(region?: string): Promise<string> {
-  // austinEngine's fleet is Austin-only by construction (see austin-seed.ts — it's built only
-  // from inventory.csv rows where city === "Austin"), so there is no region filter to apply here
-  // any more; every case in it already is this region. `region` is kept as a param only for the
-  // page title/heading and the map's inventory filter below.
+  // austinEngine's fleet is Austin-only by construction (see austin-routes.ts — Carlos's Core
+  // pack fleet filtered to units whose site starts with "Austin,"), so there is no region filter
+  // to apply here any more; every case in it already is this region. `region` is kept as a param
+  // only for the page title/heading and the map's inventory filter below.
   const state = austinEngine.getState();
   const cases = state.cases;
   const rows = cases.map(deriveAustinCaseRow);
@@ -639,10 +648,10 @@ export function renderTechnicianAppointmentsPage(techName: string): string {
   <div style="padding: 32px 40px 80px;">
     <div style="background: #FFFFFF; border: 1px solid #DEDAD2; border-radius: 8px; padding: 18px 20px;">
       <div style="font-size: 14px; font-weight: 600; color: #4A4944; margin-bottom: 14px;">Assigned cases (${assigned.length})</div>
-      <div style="display: grid; grid-template-columns: 150px 100px 1fr 60px 220px 160px 60px; gap: 10px; padding: 8px 6px; font-size: 13px; font-weight: 600; color: #6B6A64; text-transform: uppercase; letter-spacing: 0.03em; border-bottom: 1px solid #DEDAD2;">
-        <span>Case#</span><span>Asset</span><span>Site</span><span>Sev</span><span>Root cause</span><span>Status</span><span>Age</span>
+      <div style="display: grid; grid-template-columns: 100px 1fr 60px 220px 160px 60px; gap: 10px; padding: 8px 6px; font-size: 13px; font-weight: 600; color: #6B6A64; text-transform: uppercase; letter-spacing: 0.03em; border-bottom: 1px solid #DEDAD2;">
+        <span>Asset</span><span>Site</span><span>Sev</span><span>Root cause</span><span>Status</span><span>Age</span>
       </div>
-      ${assigned.length ? assigned.map((c) => renderLiveCaseRow(c)).join("") : `<div style="padding: 24px 6px; color: #8A8880;">No cases currently assigned.</div>`}
+      ${assigned.length ? assigned.map((c) => renderLiveCaseRow(c, { showId: false, clickable: false })).join("") : `<div style="padding: 24px 6px; color: #8A8880;">No cases currently assigned.</div>`}
     </div>
   </div>
 
