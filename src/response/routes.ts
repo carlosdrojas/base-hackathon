@@ -1,5 +1,5 @@
 // HTTP routes for the Response Agent (design doc §11). Mounted by dashboard-server.ts.
-// Two fleets: "core" = the team's synthetic Base Core telemetry pack (data_input/, diagnosed by the
+// Two fleets: "core" = the team's Base Core telemetry pack (data_input/, diagnosed by the
 // Task 1 detectors) and "demo" = the hand-built 12-unit fleet (data/sim-fleet.seed.json, stub
 // diagnosis). Pick the startup fleet with RESPONSE_FLEET=core|demo; switch live via /reset.
 
@@ -42,7 +42,10 @@ function build(source: FleetSource): ResponseEngine {
   });
 }
 
-let source: FleetSource = process.env.RESPONSE_FLEET === "demo" ? "demo" : "core";
+// Default "demo": /fleet, /case and /technician treat /api/response/* as the demo fleet and read the
+// Core pack through the separate Austin engine (austin-routes.ts). The Core pack + answer-key
+// scorecard stay one dropdown away on /response, or start with RESPONSE_FLEET=core.
+let source: FleetSource = process.env.RESPONSE_FLEET === "core" ? "core" : "demo";
 /** The active engine. Reassigned when the UI switches fleets. */
 export let engine: ResponseEngine = build(source);
 

@@ -3,3 +3,6 @@ node_modules
 dist
 .DS_Store
 data/runtime
+data/runtime-austin
+# Regenerated fresh from data_input/*.csv at every server start (see src/response/austin-seed.ts)
+data/austin-fleet.seed.json
