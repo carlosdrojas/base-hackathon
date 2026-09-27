@@ -419,7 +419,7 @@ function renderLiveCasesTable(rows: LiveCaseRow[]): string {
       <div id="liveSevFilters" style="display: flex; gap: 6px;">${renderLiveFilters()}</div>
     </div>
     <div style="display: grid; grid-template-columns: 150px 100px 1fr 60px 220px 160px 60px; gap: 10px; padding: 8px 6px; font-size: 13px; font-weight: 600; color: #6B6A64; text-transform: uppercase; letter-spacing: 0.03em; border-bottom: 1px solid #DEDAD2;">
-      <span>Case#</span><span>Asset</span><span>Site</span><span>Sev</span><span>Root cause</span><span>Status</span><span>Age</span>
+      <span>Case#</span><span>Asset</span><span>Site</span><span>Sev<span class="tip" data-tip="L0 = safety case, escalated: no remote actuation, human must intervene. L1 = monitor / document only, no device command. L2 = read-only query or a remote reboot. L3 = remote firmware update to a signed, allow-listed version. L4 = on-site: dispatch a technician or return the unit to HQ.">?</span></span><span>Root cause</span><span>Status</span><span>Age</span>
     </div>
     <div id="liveCaseRows">${rows.length ? rows.map((c) => renderLiveCaseRow(c)).join("") : `<div style="padding: 16px 6px; color: #8A8880;">No open Austin cases yet.</div>`}</div>
   </div>`;
@@ -608,9 +608,19 @@ function filterLiveCases(sev) {
 // Staff-facing drill-down from the Technician view table: all real cases
 // currently assigned to one technician (assignedTech is Carlos's own
 // pickTechnician() skill-match, same as the Open cases table on /fleet).
+// `engine` is the SAME shared singleton /response's fleet switcher controls (routes.ts) --
+// when it's in "core" mode that's Megan's real STATEWIDE fleet (Round Rock, Dallas, Houston,
+// El Paso, ...), not just Austin. This dashboard is Austin-only, so filter to Austin-sited
+// cases regardless of which fleet /response currently has active. Site format differs by
+// fleet ("<street>, Austin TX" for the demo fleet vs. "Austin, TX (<site_type>)" for the real
+// pack), so a plain substring check is the one thing that matches both honestly.
 export function renderTechnicianAppointmentsPage(techName: string): string {
   const tech = techs.find((t) => t.name === techName);
-  const assigned = engine.getState().cases.map(deriveLiveCaseRow).filter((c) => c.assignedTech === techName);
+  const assigned = engine
+    .getState()
+    .cases.filter((c) => c.site.includes("Austin"))
+    .map(deriveLiveCaseRow)
+    .filter((c) => c.assignedTech === techName);
 
   return `<!doctype html>
 <html lang="en">
