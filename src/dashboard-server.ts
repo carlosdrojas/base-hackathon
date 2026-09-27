@@ -4,20 +4,9 @@ import path from "node:path";
 import { URLSearchParams } from "node:url";
 import { renderCaseWorkspacePage } from "./pages/case-workspace.js";
 import { renderFleetDashboardPage, renderTechnicianAppointmentsPage } from "./pages/fleet-dashboard.js";
-import { renderTechnicianDashboard, renderTechnicianCasePage } from "./pages/technician-dashboard.js";
+import { renderTechnicianDashboard } from "./pages/technician-dashboard.js";
 import { renderLoginPage } from "./pages/login.js";
-import {
-  checkLogin,
-  createSession,
-  destroySession,
-  getRole,
-  getSessionToken,
-  readBody,
-  homeFor,
-  caseDecisions,
-  caseClosed,
-  type Decision,
-} from "./session-store.js";
+import { checkLogin, createSession, destroySession, getRole, getSessionToken, readBody, homeFor } from "./session-store.js";
 import { createFieldRcaWorkspace } from "./field-rca/index.js";
 import { RESPONSE_PAGE } from "./pages/response-page.js";
 import { handleResponseRoutes, startResponseEngine } from "./response/routes.js";
@@ -97,11 +86,15 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
-  // --- Response agent (staff only; in-page role switcher picks tech / ops / engineer for the demo) ---
+  // --- Response agent: staff can reach everything; a technician may only read state and
+  // complete/mark-incomplete their own visit (no approve/reject/close, no plant/reset) ---
   if (pathname.startsWith("/api/response/") || pathname.startsWith("/api/sim/")) {
-    if (role !== "staff") {
+    const technicianAllowed =
+      (pathname === "/api/response/state" && req.method === "GET") ||
+      (pathname === "/api/response/visit" && req.method === "POST");
+    if (role !== "staff" && !(role === "technician" && technicianAllowed)) {
       res.writeHead(403, { "Content-Type": "application/json" });
-      res.end(JSON.stringify({ error: "staff only" }));
+      res.end(JSON.stringify({ error: role === "technician" ? "technician: read state or complete a visit only" : "staff only" }));
       return;
     }
     if (await handleResponseRoutes(req, res)) return;
@@ -115,43 +108,18 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
-  // --- Shared decision API (staff only) ---
-  if (pathname === "/api/case/1234/decision" && req.method === "POST") {
-    if (role !== "staff") {
-      res.writeHead(403);
-      res.end("forbidden");
-      return;
-    }
-    const body = await readBody(req);
-    const params = new URLSearchParams(body);
-    const decision = params.get("decision");
-    if (decision === "approved" || decision === "rejected" || decision === "pending") {
-      caseDecisions.set("1234", decision as Decision);
-    }
-    res.writeHead(200, { "Content-Type": "application/json" });
-    res.end(JSON.stringify({ ok: true }));
-    return;
-  }
-
-  if (pathname === "/api/case/1234/close" && req.method === "POST") {
-    if (role !== "staff") {
-      res.writeHead(403);
-      res.end("forbidden");
-      return;
-    }
-    if (caseDecisions.get("1234") === "pending") {
-      res.writeHead(400, { "Content-Type": "application/json" });
-      res.end(JSON.stringify({ ok: false, error: "case has no decision yet" }));
-      return;
-    }
-    caseClosed.set("1234", true);
-    res.writeHead(200, { "Content-Type": "application/json" });
-    res.end(JSON.stringify({ ok: true }));
+  // --- Case detail: reachable by both roles (staff can act via /api/response/*
+  // above, which stays staff-only; a technician sees the same real case
+  // read-only). No example/mock case ever renders here — case_id must match
+  // a real RcaCase from Carlos's engine, or the page says "Case not found". ---
+  if (pathname === "/case") {
+    const query = new URLSearchParams(url.split("?")[1] ?? "");
+    html(res, renderCaseWorkspacePage(query.get("case_id") ?? undefined, role));
     return;
   }
 
   // --- Staff-only pages ---
-  if (pathname === "/" || pathname === "/case" || pathname === "/fleet" || pathname === "/fleet/technician") {
+  if (pathname === "/" || pathname === "/fleet" || pathname === "/fleet/technician") {
     if (role !== "staff") {
       redirect(res, homeFor(role));
       return;
@@ -160,30 +128,22 @@ const server = http.createServer(async (req, res) => {
       redirect(res, "/fleet");
       return;
     }
-    if (pathname === "/case") {
-      html(res, renderCaseWorkspacePage(caseDecisions.get("1234") ?? "pending", caseClosed.get("1234") ?? false));
-      return;
-    }
+    const query = new URLSearchParams(url.split("?")[1] ?? "");
     if (pathname === "/fleet/technician") {
-      const query = new URLSearchParams(url.split("?")[1] ?? "");
-      html(res, renderTechnicianAppointmentsPage(query.get("name") ?? "", caseDecisions.get("1234") ?? "pending", caseClosed.get("1234") ?? false));
+      html(res, renderTechnicianAppointmentsPage(query.get("name") ?? ""));
       return;
     }
-    html(res, renderFleetDashboardPage(caseDecisions.get("1234") ?? "pending", caseClosed.get("1234") ?? false));
+    html(res, renderFleetDashboardPage(query.get("region") ?? "ALL"));
     return;
   }
 
   // --- Technician-only pages ---
-  if (pathname === "/technician" || pathname === "/technician/case") {
+  if (pathname === "/technician") {
     if (role !== "technician") {
       redirect(res, homeFor(role));
       return;
     }
-    if (pathname === "/technician") {
-      html(res, renderTechnicianDashboard(caseDecisions.get("1234") ?? "pending", caseClosed.get("1234") ?? false));
-      return;
-    }
-    html(res, renderTechnicianCasePage(caseDecisions.get("1234") ?? "pending", caseClosed.get("1234") ?? false));
+    html(res, renderTechnicianDashboard());
     return;
   }
 

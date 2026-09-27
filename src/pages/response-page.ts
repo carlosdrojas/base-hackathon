@@ -4,8 +4,6 @@
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 function clientMain(): void {
-  const USER_KEY = "response.user_id";
-  const DEMO_USERS = ["u-osei", "u-alvarez", "u-park"];
   const PLANTABLE = [
     "fw_soft_fault_reboot_candidate",
     "fw_version_mismatch",
@@ -21,8 +19,11 @@ function clientMain(): void {
   const ALLOWLIST = ["3.4.0"]; // mirrors fw_allowlist in the seed; the server is the real check
 
   let state: any = null;
-  let userId = "u-alvarez";
-  try { userId = localStorage.getItem(USER_KEY) || userId; } catch { /* storage blocked */ }
+  // Fixed to the engineer: our own login already separates Staff (Engineer + Ops + Admin
+  // combined) from the Technician dashboard, so there's no in-page role switcher any more.
+  // The engineer has the most authority (OTA approval, closing cases), so it demos the full
+  // page. Technicians complete their visits from their own dashboard (/technician) instead.
+  const userId = "u-park";
   let selectedCase: string | null = new URLSearchParams(location.search).get("case"); // deep link: /response?case=RCA-0003
   let plantMenuVin: string | null = null;
   let rejecting: string | null = null; // step_id with the reject form open
@@ -154,7 +155,7 @@ function clientMain(): void {
 
   function render() {
     const u = me();
-    renderHeader(u);
+    renderHeader();
     $("metrics").innerHTML = renderMetrics();
     $("fleet").innerHTML = renderFleet();
     const cases = [...state.cases].sort((a: any, b: any) => rank(a) - rank(b) || a.case_id.localeCompare(b.case_id));
@@ -175,12 +176,7 @@ function clientMain(): void {
     ({ "Escalated L0": 0, "Action pending": 1, "In progress": 2, "Field visit": 3, "Engineer review": 4, Investigating: 5, Open: 6, Closed: 9 } as any)[c.status] ?? 7;
   const empty = (msg: string) => `<div style="color:#8A8880;font-size:14px;padding:8px 2px;">${esc(msg)}</div>`;
 
-  function renderHeader(u: any) {
-    const sel = $("userSel") as HTMLSelectElement;
-    const opts = state.users.filter((x: any) => DEMO_USERS.includes(x.id) || x.id === userId)
-      .map((x: any) => `<option value="${esc(x.id)}"${x.id === u.id ? " selected" : ""}>${esc(x.name)} · ${esc(x.role)}</option>`).join("");
-    if (sel.dataset.sig !== opts) { sel.innerHTML = opts; sel.dataset.sig = opts; }
-    sel.value = u.id;
+  function renderHeader() {
     $("planner").innerHTML = state.planner === "claude"
       ? chip("Planner: Claude", ["#EAF1FF", "#1E4FBE"])
       : chip("Planner: playbook", ["#EFEDE7", "#4A4944"]);
@@ -353,7 +349,7 @@ function clientMain(): void {
                 <button class="btn btnGhost" data-act="visitIncomplete" data-visit="${esc(v.visit_id)}"${f.reason ? "" : ' disabled title="pick a reason first"'}>Mark incomplete</button>
               </div>
             </div>`
-          : `<div style="font-size:12px;color:#8A8880;margin-top:8px;">Switch to a technician to complete this visit.</div>`;
+          : `<div style="font-size:12px;color:#8A8880;margin-top:8px;">Complete this from the Technician Dashboard.</div>`;
       }
       const vs: [string, string] = v.state === "completed" ? ["#E7F2EA", "#1D6F3E"] : v.state === "incomplete" ? ["#FFF3E0", "#9A5B00"] : ["#EAF1FF", "#1E4FBE"];
       return `<div class="card" style="padding:12px 14px;margin-bottom:10px;box-shadow:none;${v.state !== "scheduled" ? "opacity:0.75;" : ""}">
@@ -493,12 +489,7 @@ function clientMain(): void {
   document.addEventListener("change", (ev) => {
     const el = ev.target as HTMLInputElement;
     const d = el.dataset;
-    if (el.id === "userSel") {
-      userId = el.value;
-      try { localStorage.setItem(USER_KEY, userId); } catch { /* storage blocked */ }
-      rejecting = null;
-      render();
-    } else if (d.act === "photos") {
+    if (d.act === "photos") {
       visitForm[d.visit!].photos = el.checked;
       render();
     } else if (d.act === "reason") {
@@ -523,8 +514,6 @@ function tourMain(): void {
   const STEPS: Step[] = [
     { title: "Welcome to the Response agent",
       body: "Diagnosis tells you what's wrong with an inverter. This page is what happens next: the agent plans the cheapest safe fix, a person approves it, the system runs it on the fleet, and then checks the fault actually cleared. The goal is to stop pulling healthy inverters back to HQ. This tour takes about a minute." },
-    { target: "#roleSwitch", title: "Acting as: pick your role",
-      body: "Switch between Technician, Ops and Engineer. What you can approve changes with the role, and the server enforces it, not just the buttons. Ops approves reboots and dispatches, only an Engineer can approve a firmware update or close a case, and a Technician approves nothing but completes field visits." },
     { target: "#planner", title: "Who wrote the plan",
       body: "\"Claude\" when the AI planner is live, \"playbook\" when it falls back to fixed rules. Either way it can only choose from a fixed list of actions, and it can never write or patch firmware." },
     { target: "#metrics", title: "The scoreboard",
@@ -538,11 +527,11 @@ function tourMain(): void {
     { target: "#detailCard", title: "Case detail and timeline",
       body: "Everything that happened on the case: the diagnosis, each approval and by whom, what ran, whether it worked, and alerts sent. This is the audit trail. An Engineer closes the case here once it's resolved." },
     { target: "#visitsCard", title: "Field visits",
-      body: "When a tech has to go on site, the agent books one with a short \"why you're here\" and a checklist. Switch to a Technician to complete the visit. Connector and install jobs need photos first, and an incomplete visit needs a reason so the next person isn't starting from zero." },
+      body: "When a tech has to go on site, the agent books one with a short \"why you're here\" and a checklist. The technician completes it from their own dashboard, not here — connector and install jobs need photos first, and an incomplete visit needs a reason so the next person isn't starting from zero." },
     { target: "#bugsCard", title: "Engineer bug reports",
       body: "When several units on the same firmware fail the same way, the agent writes a report for engineers with the evidence and affected units. It recommends; it never patches." },
     { title: "Try it",
-      body: "As M. Alvarez (Ops), approve the reboot on INV-5003 and watch it clear with no truck sent. Then try INV-5008 as Ops and see the firmware update blocked as engineer-only. Replay this tour any time with the Tour button." },
+      body: "Approve the reboot on INV-5003 and watch it clear with no truck sent. As the engineer, you can also approve a firmware OTA once one comes up in the queue. Replay this tour any time with the Tour button." },
   ];
 
   let i = 0;
@@ -685,7 +674,7 @@ export const RESPONSE_PAGE = `<!doctype html>
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Response Agent</title>
+<title>Response — ARCA</title>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Space+Mono:wght@400;500&display=swap">
 <style>
   body { margin: 0; background: #F0EEEB; font-family: 'Space Grotesk', system-ui, sans-serif; color: #292826; }
@@ -743,14 +732,16 @@ export const RESPONSE_PAGE = `<!doctype html>
 
   <!-- HEADER -->
   <div class="hdrPad" style="position: sticky; top: 0; z-index: 20; background: #F0EEEB; padding: 20px 40px 0;">
-    <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 14px;">
+    <div style="position: relative; display: flex; align-items: center; gap: 10px; margin-bottom: 14px;">
       <img src="/base_logo.png" alt="Base" style="height: 48px; width: auto; display: block;">
       <span style="width: 1px; height: 24px; background: #C9C6BD; display: inline-block;"></span>
-      <span style="font-size: 15px; color: #6B6A64; font-weight: 400;">Field RCA</span>
+      <span style="font-size: 15px; color: #6B6A64; font-weight: 400;">ARCA</span>
       <span style="flex: 1;"></span>
-      <a href="/fleet" style="font-size: 14px; color: #6B6A64; text-decoration: none;">Fleet</a>
-      <a href="/case" style="font-size: 14px; color: #6B6A64; text-decoration: none; margin-left: 12px;">Case</a>
-      <a href="/response" style="font-size: 14px; color: #1E4D2B; font-weight: 600; text-decoration: none; margin-left: 12px;">Response</a>
+      <nav style="position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); display: flex; gap: 10px; background: #EFEDE7; padding: 5px; border-radius: 8px;" aria-label="Dashboard">
+        <a href="/fleet" style="font-size: 17px; font-weight: 600; text-decoration: none; padding: 9px 22px; border-radius: 6px; background: transparent; color: #6B6A64;">Fleet</a>
+        <a href="/case" style="font-size: 17px; font-weight: 600; text-decoration: none; padding: 9px 22px; border-radius: 6px; background: transparent; color: #6B6A64;">Case</a>
+        <a href="/response" style="font-size: 17px; font-weight: 600; text-decoration: none; padding: 9px 22px; border-radius: 6px; background: #1E4D2B; color: #FFFFFF;">Response</a>
+      </nav>
       <span style="font-size: 13px; color: #8A8880; margin-left: 18px;">Logged in as <strong style="color: #4A4944;">Staff</strong> &middot; <a href="/logout" style="color: #6B6A64;">Logout</a></span>
     </div>
     <div style="display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; flex-wrap: wrap; padding-bottom: 20px;">
@@ -762,9 +753,6 @@ export const RESPONSE_PAGE = `<!doctype html>
         <span class="mocked" title="Fake fleet and in-memory engine. Not Base data, no production APIs.">MOCKED</span>
         <span id="planner"></span>
         <button id="tourBtn" class="btn btnGhost" type="button" title="Replay the walkthrough">Tour</button>
-        <label id="roleSwitch" style="font-size: 13px; color: #6B6A64; display: flex; align-items: center; gap: 6px;">Acting as
-          <select id="userSel" class="input" style="font-size: 14px; font-weight: 600;"></select>
-        </label>
         <span id="conn" style="font-size: 12px; color: #B42318;"></span>
       </div>
     </div>

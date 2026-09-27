@@ -3,7 +3,7 @@ export function renderLoginPage(error: boolean): string {
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<title>Log in — Field RCA</title>
+<title>Log in — ARCA</title>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&display=swap">
 <style>
   body { margin: 0; background: #F0EEEB; font-family: 'Space Grotesk', system-ui, sans-serif; color: #292826; display: flex; align-items: center; justify-content: center; min-height: 100vh; }
@@ -15,7 +15,7 @@ export function renderLoginPage(error: boolean): string {
     <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 24px;">
       <img src="/base_logo.png" alt="Base" style="height: 40px; width: auto; display: block;">
       <span style="width: 1px; height: 22px; background: #C9C6BD; display: inline-block;"></span>
-      <span style="font-size: 15px; color: #6B6A64;">Field RCA</span>
+      <span style="font-size: 15px; color: #6B6A64;">ARCA &mdash; Automatic Root Cause Analysis</span>
     </div>
     <div style="font-size: 20px; font-weight: 600; margin-bottom: 4px;">Log in</div>
     <div style="font-size: 14px; color: #6B6A64; margin-bottom: 20px;">Demo accounts &mdash; staff / tech, password <span class="mono" style="font-family: monospace;">basehq2026</span></div>

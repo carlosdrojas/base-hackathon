@@ -1,583 +1,352 @@
-// Plain HTML/CSS/vanilla-JS port of the Case Workspace Claude Artifact mockup
-// (Field RCA design doc §8.1). Ported by hand from the .dc.html source so it
-// runs in a real browser instead of Claude's sandboxed Design-canvas runtime.
-//
-// Next step (not wired up here): src/mock-telemetry/core-fleet-telemetry.json
-// has real-BMS-grounded mock fleet data that could replace the static values
-// below once the case detail view is data-driven instead of hardcoded.
+// Real per-case detail page, driven by ?case_id=<id>. There is no example or
+// mock case here — the only cases that exist are real RcaCase objects from
+// Carlos's response engine (src/response/*), created when a fault is planted
+// (POST /api/sim/plant → engine.ingestFaults()). This page's rendering logic
+// is ported from response-page.ts's renderDetail/renderStep/renderCase, then
+// adapted from a client-rendered single-page app into a server-rendered page
+// plus a small amount of inline JS for the interactive (approve/reject/close)
+// parts. Staff can approve/reject/close; a technician sees the same data
+// fully read-only (no approve/reject/close controls rendered at all — the
+// underlying /api/response/* actions are staff-only regardless).
+import type { Role } from "../session-store.js";
+import { engine } from "../response/routes.js";
+import type { RcaCase, PlannedStep, User } from "../response/types.js";
 
-const chartScale = (min: number, max: number, val: number) => Math.round(((val - min) / (max - min)) * 120);
-
-const bucketTimes = ["08:00", "08:15", "08:30", "08:45", "09:00", "09:15", "09:30", "09:45"];
-const spikeIdx = 5;
-
-const tempMin = 60, tempMax = 100, tempBaseline = 89, tempThreshold = 80;
-const tempValues = [88, 89, 90, 88, 84, 71, 81, 83];
-const tempBaselineY = chartScale(tempMin, tempMax, tempBaseline);
-
-const canMin = 0, canMax = 120, canBaseline = 36, canThreshold = 45;
-const canValues = [34, 36, 35, 38, 40, 112, 42, 38];
-const canBaselineY = chartScale(canMin, canMax, canBaseline);
-const canThresholdY = chartScale(canMin, canMax, canThreshold);
-
-function renderBars(values: number[], min: number, max: number, threshold: number, selectedIdx: number, kind: "temp" | "can"): string {
-  return values
-    .map((v, i) => {
-      const h = chartScale(min, max, v);
-      const color = kind === "temp" ? (v < threshold ? "#DC2626" : "#1E4D2B") : (v > threshold ? "#DC2626" : "#1E4D2B");
-      const isSpike = i === spikeIdx;
-      const ring = i === selectedIdx ? "inset 0 0 0 2px #292826" : "none";
-      return `<button class="bar" data-kind="${kind}" data-idx="${i}" data-time="${bucketTimes[i]}" data-value="${v}" onclick="selectBar('${kind}', ${i})" style="position:relative;flex:1;height:100%;display:flex;align-items:flex-end;justify-content:center;background:none;border:none;padding:0;cursor:pointer;">
-        ${isSpike ? `<span style="position:absolute;top:-20px;left:50%;transform:translateX(-50%);font-size:11px;font-weight:700;color:#B42318;background:#FDECEC;padding:1px 5px;border-radius:3px;white-space:nowrap;">SPIKE</span>` : ""}
-        <div style="width:100%;background:${color};opacity:0.85;border-radius:2px 2px 0 0;height:${h}px;box-shadow:${ring};"></div>
-      </button>`;
-    })
-    .join("");
-}
-
-function renderTimes(): string {
-  return bucketTimes.map((t) => `<span class="mono" style="flex:1;text-align:center;font-size:11px;color:#8A8880;">${t}</span>`).join("");
-}
-
-// Real Task-1 output shape (src/field-rca/contracts.ts's Hypothesis, the
-// frozen contract tied to the design doc — not Carlos's src/response/types.ts,
-// which is a differently-shaped contract for his separate /response engine).
-// Real difference from what this page showed before: the contract gives ONE
-// confidence for the primary root_cause_class; `differentials` is a plain
-// list of alternative classes with no per-item confidence. The old UI's
-// 81%/14%/5% breakdown invented precision the contract doesn't provide —
-// dropped in favor of an honest primary-confidence + plain-alternatives list.
-const hypothesis: Hypothesis = {
-  rootCauseClass: "can_link_unreliable",
-  confidence: 0.81,
-  differentials: ["fw_soft_fault_reboot_candidate", "install_commissioning_incomplete"],
-  evidenceRefs: ["CAN drop 14% (threshold 12%)", "3 bus-off events in spike window", "Efficiency dip to 71% in same bucket"],
-  humanSummary: "Connector J3 suspected not fully mated.",
+const STATUS: Record<string, [string, string]> = {
+  Open: ["#EFEDE7", "#4A4944"],
+  Investigating: ["#EFEDE7", "#4A4944"],
+  "Action pending": ["#FFF3E0", "#9A5B00"],
+  "In progress": ["#EAF1FF", "#1E4FBE"],
+  "Field visit": ["#EAF1FF", "#1E4FBE"],
+  "Engineer review": ["#E7F2EA", "#1D6F3E"],
+  "Escalated L0": ["#FDECEC", "#B42318"],
+  Closed: ["#F4F3EF", "#8A8880"],
 };
+const LEVEL: Record<string, [string, string]> = {
+  L0: ["#FDECEC", "#B42318"],
+  L1: ["#FFF3E0", "#9A5B00"],
+  L2: ["#FFF3E0", "#9A5B00"],
+  L3: ["#EAF1FF", "#1E4FBE"],
+  L4: ["#EFEDE7", "#4A4944"],
+};
+const STEP: Record<string, [string, string]> = {
+  planned: ["#F4F3EF", "#8A8880"],
+  awaiting_approval: ["#FFF3E0", "#9A5B00"],
+  approved: ["#EAF1FF", "#1E4FBE"],
+  running: ["#EAF1FF", "#1E4FBE"],
+  done: ["#E7F2EA", "#1D6F3E"],
+  failed: ["#FDECEC", "#B42318"],
+  denied: ["#FDECEC", "#B42318"],
+  rejected: ["#F4F3EF", "#6B6A64"],
+  skipped: ["#F4F3EF", "#8A8880"],
+};
+const REQUIRES: Record<string, string> = {
+  none: "auto",
+  ops_or_engineer: "ops or engineer",
+  engineer: "engineer only",
+  ops_and_engineer: "ops + engineer",
+};
+const ALLOWLIST = ["3.4.0"];
 
-function renderDifferentials(): string {
-  const primaryRow = `<div style="margin-bottom:12px;">
-    <div style="display:flex;justify-content:space-between;font-size:15px;margin-bottom:4px;">
-      <span class="mono" style="color:#292826;font-weight:600;">${hypothesis.rootCauseClass}</span>
-      <span class="mono" style="color:#6B6A64;">${Math.round(hypothesis.confidence * 100)}%</span>
+function esc(s: unknown): string {
+  return String(s ?? "").replace(/[&<>"']/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[ch]!);
+}
+function pretty(s: string): string {
+  return s.replace(/_/g, " ");
+}
+function time(iso: string): string {
+  return new Date(iso).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", timeZone: "America/Chicago" });
+}
+function chip(text: string, c: [string, string] | undefined, extra = ""): string {
+  const [bg, color] = c ?? ["#EFEDE7", "#4A4944"];
+  return `<span style="display:inline-block;font-size:12px;font-weight:600;padding:2px 8px;border-radius:4px;white-space:nowrap;background:${bg};color:${color};${extra}">${esc(text)}</span>`;
+}
+function actorName(a: PlannedStep["approvals"][number]["user"] | string): string {
+  return typeof a === "string" ? a : a.name;
+}
+
+// Same gate as response-page.ts's client-side mirror (real fault/hypothesis
+// logic from src/response/*), used only to disable buttons with a reason —
+// the real enforcement is the server's /api/response/* gate.
+function isSafety(c: RcaCase): boolean {
+  const dev = engine.getState().fleet.find((d) => d.vin === c.vin);
+  return (
+    c.hypothesis?.root_cause === "thermal_or_safety_event" ||
+    (dev?.active_fault_codes ?? []).some((x) => x.startsWith("INV-F900")) ||
+    c.status === "Escalated L0"
+  );
+}
+function gateFor(step: PlannedStep, c: RcaCase, u: User): string | null {
+  const remote = step.action === "reboot" || step.action === "ota_to_allowlisted";
+  if (remote && isSafety(c)) return "safety (L0) case: no remote actuation";
+  if (remote && (!c.hypothesis || c.hypothesis.root_cause === "unknown" || c.hypothesis.confidence < 0.5)) return "hypothesis unknown or confidence < 0.5";
+  if (step.action === "ota_to_allowlisted" && !ALLOWLIST.includes(step.params?.target_fw)) return "target fw not on the allow-list";
+  if (u.role === "technician") return "technicians complete visits; they don't approve actions";
+  if (u.role === "admin") return "admin doesn't bypass safety";
+  if (step.requires === "engineer" && u.role !== "engineer") return "engineer only: OTA needs an engineer's approval";
+  if (step.requires === "ops_and_engineer") {
+    if (step.approvals.some((a) => a.user.id === u.id)) return "you already approved; needs a second, distinct user";
+    if (step.approvals.some((a) => a.user.role === u.role)) return `already approved by ${u.role}; needs the other role`;
+  }
+  return null;
+}
+function closeBlock(c: RcaCase, u: User): string | null {
+  if (u.role !== "engineer") return "only an engineer can close a case";
+  if (c.status === "Engineer review") return null;
+  if (c.status === "Escalated L0" && (c.outcome === "l0_made_safe" || c.outcome === "pulled_justified")) return null;
+  return `case is ${c.status}`;
+}
+
+function renderStep(s: PlannedStep, i: number, c: RcaCase, u: User, readOnly: boolean): string {
+  let actions = "";
+  if (!readOnly && s.state === "awaiting_approval" && c.status !== "Closed") {
+    const why = gateFor(s, c, u);
+    const dis = why ? ` disabled title="${esc(why)}"` : "";
+    actions = `<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-top:6px;">
+      <button class="btn btnPrimary" data-act="approve" data-step="${esc(s.step_id)}"${dis}>Approve</button>
+      <button class="btn btnGhost" data-act="rejectOpen" data-step="${esc(s.step_id)}"${dis}>Reject</button>
+      ${why ? `<span style="font-size:12px;color:#9A5B00;">&#9888; ${esc(why)}</span>` : ""}
     </div>
-    <div style="height:6px;background:#EFEDE7;border-radius:3px;">
-      <div style="height:6px;background:#292826;border-radius:3px;width:${Math.round(hypothesis.confidence * 100)}%;"></div>
+    <div id="rejectRow-${esc(s.step_id)}" hidden style="display:flex;gap:6px;margin-top:6px;">
+      <input class="input" id="rejectInput-${esc(s.step_id)}" placeholder="Reason (required)" style="flex:1;">
+      <button class="btn btnDanger" data-act="reject" data-step="${esc(s.step_id)}">Confirm reject</button>
+      <button class="btn btnGhost" data-act="rejectCancel" data-step="${esc(s.step_id)}">Cancel</button>
+    </div>`;
+  }
+  const approvals = s.approvals.length ? `<span style="font-size:12px;color:#6B6A64;"> &middot; approved by ${s.approvals.map((a) => esc(actorName(a.user))).join(", ")}</span>` : "";
+  const result = s.result ? `<div style="font-size:12px;color:#4A4944;margin-top:3px;"><span class="mono">${esc(s.result.outcome)}</span> &middot; ${esc(s.result.detail)}</div>` : "";
+  const params = s.params?.target_fw ? ` <span class="mono" style="font-size:12px;color:#6B6A64;">&rarr; ${esc(s.params.target_fw)}</span>` : "";
+  return `<div class="step">
+    <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+      <span class="mono" style="color:#8A8880;font-size:12px;width:16px;">${i + 1}</span>
+      <span class="mono" style="font-size:14px;font-weight:500;">${esc(s.action)}</span>${params}
+      ${chip(s.level, LEVEL[s.level], "font-size:11px;")}
+      <span style="font-size:12px;color:#6B6A64;">${esc(REQUIRES[s.requires] ?? s.requires)}</span>
+      <span style="flex:1;"></span>
+      ${chip(pretty(s.state), STEP[s.state], "font-size:11px;")}
     </div>
+    <div style="font-size:12px;color:#8A8880;margin:2px 0 0 24px;">${esc(s.rationale)}${approvals}</div>
+    <div style="margin-left:24px;">${result}${actions}</div>
   </div>`;
-  const altRows = hypothesis.differentials
-    .map(
-      (d) => `<div style="display:flex;justify-content:space-between;font-size:15px;margin-bottom:8px;">
-        <span class="mono" style="color:#6B6A64;font-weight:400;">${d}</span>
-        <span style="font-size:13px;color:#8A8880;">differential</span>
-      </div>`
-    )
-    .join("");
-  return primaryRow + altRows;
 }
 
-// ROOT_CAUSE_CLASSES is the frozen closed set (src/field-rca/contracts.ts) —
-// importing it directly instead of hand-listing values means this dropdown
-// can't silently drift from the real taxonomy.
-const overrideOptions = [
-  { value: "", label: "No override — accept agent hypothesis" },
-  ...ROOT_CAUSE_CLASSES.map((value) => ({ value, label: value })),
-];
+function levelChips(gp: RcaCase["gameplan"]): string {
+  if (!gp) return "";
+  if (gp.level === "L0") return chip("L0", LEVEL.L0);
+  const live = ["running", "awaiting_approval", "approved", "planned"];
+  const cur = gp.steps.find((s) => live.includes(s.state)) ?? [...gp.steps].reverse().find((s) => s.state === "done" || s.state === "failed");
+  const lvl = cur ? cur.level : gp.level;
+  const tail = lvl !== gp.level ? `<span style="color:#8A8880;font-size:12px;">up to ${esc(gp.level)}</span>` : "";
+  return `${chip("now " + lvl, LEVEL[lvl])}${tail}`;
+}
 
-// Merged, chronologically-ordered feed of system CaseEvents and human notes —
-// previously two separate tabs (Timeline + Notes). One shared thread so the
-// system's own record and what engineers/technicians said about it read as
-// a single story instead of requiring a reader to cross-reference two tabs.
-// `eventType`/`role` are typed against src/field-rca/contracts.ts where a
-// real closed set applies. Only the DETECTOR row is a genuine detector output
-// (EVENT_TYPES is specifically for those); AGENT/SYSTEM rows are case-lifecycle
-// narration with no EventType of their own, left as free-text actor tags.
-export const caseThread: { time: string; actor: string; label: string; eventType?: EventType; role?: FieldRole }[] = [
-  { time: "09-24 16:05", actor: "TECHNICIAN", role: "technician", label: "D. Osei: Prior visit incomplete — needed a second tech for panel access. Rescheduled for 09-26." },
-  // can.error_burst over can.bus_off: the summary is framed as a RATE crossing
-  // a THRESHOLD ("drop 14%... threshold 12%"), which is error_burst's shape
-  // ("error-frame rate above N for >= T seconds"); the "bus-off events x3"
-  // clause is a secondary detail within the same summary, not a separate
-  // bus_off-triggered event in this mock.
-  { time: "09:14", actor: "DETECTOR", eventType: "can.error_burst", label: "CAN drop 14% (threshold 12%) — bus-off events x3" },
-  { time: "09:15", actor: "AGENT", label: "Hypothesis posted — can_link_unreliable (0.81 confidence)" },
-  { time: "09:16", actor: "SYSTEM", label: "Policy gate — L2, human approval required before execution" },
-  { time: "09:20", actor: "ENGINEER", role: "engineer", label: "M. Alvarez: Second bus-off cluster this month on this site — check if the J3 harness batch is flagged." },
-];
+function renderNotFound(fleetHref: string): string {
+  return `<div style="padding: 40px; font-size: 16px; color: #6B6A64;">
+    <a href="${fleetHref}" style="font-size: 15px; color: #6B6A64; text-decoration: none;">&larr; Open cases</a>
+    <div style="margin-top: 16px; font-size: 20px; font-weight: 600; color: #292826;">Case not found</div>
+    <div style="margin-top: 6px;">No case matches this id. Cases only exist once a fault is planted on a unit &mdash; see the Response agent page.</div>
+  </div>`;
+}
 
-export function renderCaseThread(): string {
-  return caseThread
-    .map(
-      (e) => `<div style="display: flex; gap: 14px; padding: 8px 0; border-top: 1px solid #F0EEE9;">
-          <span class="mono" style="width: 84px; flex-shrink: 0; font-size: 13px; color: #8A8880; padding-top: 2px;">${e.time}</span>
-          <span style="width: 96px; flex-shrink: 0; font-size: 13px; font-weight: 600; color: #4A4944; padding-top: 2px;">${e.actor}</span>
-          <span style="font-size: 16px; color: #292826;">${e.label}</span>
+export function renderCaseWorkspacePage(caseId: string | undefined, role: Role): string {
+  const fleetHref = role === "staff" ? "/fleet" : "/technician";
+  const c = caseId ? engine.getState().cases.find((x) => x.case_id === caseId) : undefined;
+
+  if (!c) {
+    return `<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Case not found — ARCA</title>
+${HEAD}
+</head>
+<body>
+<div style="width: 100%; min-height: 100%; display: flex; flex-direction: column;">
+  ${header(role, undefined)}
+  ${renderNotFound(fleetHref)}
+</div>
+</body>
+</html>`;
+  }
+
+  // Fixed to the engineer for staff, matching response-page.ts's own choice
+  // (the account has the most authority: OTA approval and closing cases).
+  // A technician viewing this page never sends any action, so their "user"
+  // is only used to compute (and hide behind) gateFor()/closeBlock() text.
+  const seedUsers = engine.getState().users;
+  const actingUser: User = role === "staff" ? seedUsers.find((u) => u.id === "u-park") ?? seedUsers[0] : seedUsers.find((u) => u.role === "technician") ?? seedUsers[0];
+  const readOnly = role !== "staff";
+
+  const gp = c.gameplan;
+  const h = c.hypothesis;
+  const block = closeBlock(c, actingUser);
+  const closeUi =
+    !readOnly && c.status !== "Closed"
+      ? `<div style="border-top:1px solid #F0EEE9;padding-top:14px;margin-top:14px;">
+          <div style="display:flex;gap:6px;">
+            <input id="closeNote" class="input" placeholder="Close note" style="flex:1;"${block ? " disabled" : ""}>
+            <button class="btn btnPrimary" data-act="close"${block ? ` disabled title="${esc(block)}"` : ""}>Close case</button>
+          </div>
+          ${block ? `<div style="font-size:12px;color:#8A8880;margin-top:4px;">${esc(block)}</div>` : ""}
         </div>`
-    )
-    .join("");
-}
+      : "";
 
-import type { Decision } from "../session-store.js";
-import { deriveCaseStatus } from "../session-store.js";
-// src/field-rca/contracts.ts is the frozen contract tied to the actual design
-// doc — deliberately NOT src/response/types.ts, which is Carlos's separate,
-// differently-shaped contract for his own /response page + fake-fleet engine
-// ("Owned by teammates (do not build): /fleet, /case, map" — his doc, verbatim).
-import {
-  ROOT_CAUSE_CLASSES,
-  type Hypothesis,
-  type Gameplan,
-  type ActionId,
-  type PermissionLevel,
-  type EventType,
-  type Role as FieldRole,
-} from "../field-rca/index.js";
-
-// Real Task-2 output shape (contracts.ts's Gameplan): one recommended action,
-// not the multi-step planner Carlos's response engine builds — that's his
-// piece, not this page's.
-const gameplan: Gameplan = {
-  recommendedActionId: "reboot_firmware",
-  level: "L2",
-  playbookId: null,
-  alertParties: ["ops"],
-  schedule: null,
-  humanSummary: `confidence ${hypothesis.confidence} · role required: ops`,
-};
-
-export function renderCaseWorkspacePage(decision: Decision, closed: boolean): string {
-  const isApproved = decision === "approved";
-  const isRejected = decision === "rejected";
-  const decided = isApproved || isRejected;
-
-  const statusLabel = !decided ? "Awaiting ops approval" : isApproved ? "Approved — executed" : "Rejected — escalated to engineer";
-  const statusColor = !decided ? "#9A5B00" : isApproved ? "#1E4D2B" : "#DC2626";
-
-  const approveBg = decided ? "#EFEDE7" : "#1E4D2B";
-  const approveColor = decided ? "#B0AEA6" : "#FFFFFF";
-  const approveCursor = decided ? "default" : "pointer";
-
-  const caseStatusLabel = deriveCaseStatus(decision, closed);
-  const approvalStatusLabel = closed ? "Closed" : "Open";
-
-  const signLabel = closed ? "Signed &amp; Closed &#10003;" : "Sign &amp; Close";
-  const signBg = closed ? "#EAF3E7" : decided ? "#1E4D2B" : "#EFEDE7";
-  const signColor = closed ? "#1E4D2B" : decided ? "#FFFFFF" : "#B0AEA6";
-  const signBorder = closed ? "#EAF3E7" : decided ? "#1E4D2B" : "#D8D5CC";
-  const signCursor = closed ? "default" : decided ? "pointer" : "not-allowed";
-  const signClickable = decided && !closed;
-
-  const timelineFinalTime = decided ? "now" : "&mdash;";
-  const timelineFinalActor = decided ? "OPS" : "PENDING";
-  const timelineFinalLabel = !decided
-    ? "Awaiting ops approval on reboot_firmware"
-    : isApproved
-    ? "Approved — reboot_firmware executed, post-check scheduled in 15 min"
-    : "Rejected — case escalated for engineer review";
+  const events = [...c.timeline].reverse().map(
+    (e) => `<div class="event">
+      <span class="mono" style="font-size:11px;color:#8A8880;width:62px;flex-shrink:0;">${time(e.ts)}</span>
+      <div style="min-width:0;">
+        <div style="font-size:13px;color:#292826;">${esc(e.summary)}</div>
+        <div style="font-size:11px;color:#8A8880;"><span class="mono">${esc(e.kind)}</span> &middot; ${esc(actorName(e.actor))}</div>
+      </div>
+    </div>`
+  ).join("");
 
   return `<!doctype html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<title>Case Workspace — Field RCA</title>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Space+Mono:wght@400;500&display=swap">
-<style>
-  html { scroll-behavior: smooth; }
-  body { margin: 0; background: #F0EEEB; font-family: 'Space Grotesk', system-ui, sans-serif; color: #292826; }
-  a { color: #1E4D2B; }
-  a:hover { color: #163A20; }
-  .mono { font-family: 'Space Mono', monospace; }
-  ::selection { background: #D6F0B4; }
-  .navTab { color: #FFFFFF; }
-  .navTab:hover { color: #B9E2A8; }
-</style>
+<title>${esc(c.case_id)} — ARCA</title>
+${HEAD}
 </head>
 <body>
 
 <div style="width: 100%; min-height: 100%; display: flex; flex-direction: column;">
+  ${header(role, c)}
 
-  <!-- HEADER -->
-  <div id="stickyHeader" style="position: sticky; top: 0; z-index: 10; background: #F0EEEB; padding: 16px 40px 0;">
-    <div style="display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 14px;">
-      <div style="display: flex; align-items: center; gap: 10px;">
-        <img src="/base_logo.png" alt="Base" style="height: 48px; width: auto; display: block;">
-        <span style="width: 1px; height: 24px; background: #C9C6BD; display: inline-block;"></span>
-        <span style="font-size: 15px; color: #6B6A64; font-weight: 400;">Field RCA</span>
+  <div style="padding: 28px 40px 80px; max-width: 900px;">
+
+    <div style="background: #FFFFFF; border: 1px solid #DEDAD2; border-radius: 8px; padding: 20px 24px; margin-bottom: 24px;">
+      <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+        ${gp ? levelChips(gp) : ""}
+        ${chip(c.status, STATUS[c.status])}
+        ${c.outcome ? chip(pretty(c.outcome), ["#E7F2EA", "#1D6F3E"]) : ""}
       </div>
-      <div style="display: flex; align-items: center; gap: 18px;">
-        <nav style="display: flex; gap: 12px;">
-          <a href="/fleet" style="font-size: 14px; color: #6B6A64; text-decoration: none;">Fleet</a>
-          <a href="/case" style="font-size: 14px; color: #1E4D2B; font-weight: 600; text-decoration: none;">Case</a>
-          <a href="/response" style="font-size: 14px; color: #6B6A64; text-decoration: none;">Response</a>
-        </nav>
-        <div style="font-size: 13px; color: #8A8880;">Logged in as <strong style="color: #4A4944;">Staff</strong> &middot; <a href="/logout" style="color: #6B6A64;">Logout</a></div>
-      </div>
-    </div>
-    <a href="/fleet" style="font-size: 15px; color: #6B6A64; text-decoration: none;">&larr; Open cases</a>
-    <div style="display: flex; align-items: baseline; gap: 12px; margin-top: 6px; padding-bottom: 14px;">
-      <span class="mono" style="font-size: 24px; font-weight: 600; color: #292826;">Case #1234</span>
-      <span style="font-size: 17px; color: #6B6A64;">INV-4021 &middot; 118 Maple Ct, Round Rock TX</span>
+      ${h
+        ? `<div style="font-size:15px;margin-top:10px;">
+            <span class="mono" style="font-weight:600;font-size:18px;">${esc(h.root_cause)}</span>
+            <span style="color:#6B6A64;"> &middot; ${Math.round(h.confidence * 100)}% confidence &middot; ${esc(h.source)} &middot; fw ${esc(h.fw_version)}</span>
+          </div>
+          <div style="font-size:13px;color:#8A8880;margin-top:6px;">Evidence: ${h.evidence.map(esc).join(" &middot; ")}</div>`
+        : `<div style="font-size:15px;color:#6B6A64;margin-top:10px;">No hypothesis yet &mdash; the engine hasn't diagnosed this case.</div>`}
+      ${gp ? `<div style="font-size:13px;color:#6B6A64;margin-top:10px;">${esc(gp.summary)} <span style="color:#8A8880;">&middot; plan: ${esc(gp.source)}</span></div>` : ""}
     </div>
 
-    <!-- SECTION NAV (jump links, one-pager) -->
-    <div style="display: flex; gap: 2px; overflow-x: auto; background: #1E4D2B; margin: 0 -40px; padding: 0 40px;">
-      <a href="#diagnosis" class="navTab" style="font-weight: 500; font-size: 15px; padding: 10px 14px; text-decoration: none; white-space: nowrap;">Diagnosis</a>
-      <a href="#timeline" class="navTab" style="font-weight: 500; font-size: 15px; padding: 10px 14px; text-decoration: none; white-space: nowrap;">Timeline &amp; Notes</a>
-      <a href="#evidence" class="navTab" style="font-weight: 500; font-size: 15px; padding: 10px 14px; text-decoration: none; white-space: nowrap;">Evidence viewer</a>
-      <a href="#hypothesis" class="navTab" style="font-weight: 500; font-size: 15px; padding: 10px 14px; text-decoration: none; white-space: nowrap;">Hypothesis panel</a>
-      <a href="#action" class="navTab" style="font-weight: 500; font-size: 15px; padding: 10px 14px; text-decoration: none; white-space: nowrap;">Action</a>
-      <a href="#other" class="navTab" style="font-weight: 500; font-size: 15px; padding: 10px 14px; text-decoration: none; white-space: nowrap;">Other information</a>
-    </div>
-  </div>
-
-  <!-- BODY -->
-  <div style="padding: 28px 40px 80px; max-width: 1800px;">
-
-    <!-- DIAGNOSIS -->
-    <div id="diagnosis" style="scroll-margin-top: 16px; margin-bottom: 48px;">
-      <div style="font-size: 22px; font-weight: 600; margin-bottom: 16px;">Diagnosis</div>
-      <div style="display: flex; flex-direction: column; gap: 16px;">
-        <div style="display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.15fr); gap: 16px; align-items: start;">
-
-        <div style="background: #FFFFFF; border: 1px solid #DEDAD2; border-radius: 8px; padding: 20px 24px;">
-          <div style="font-size: 13px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; color: #6B6A64; margin-bottom: 6px;">Case summary</div>
-
-          <div style="display: flex; align-items: center; justify-content: space-between; padding: 9px 0; border-top: 1px solid #F0EEE9;">
-            <span style="font-size: 15px; color: #6B6A64;">Status</span>
-            <span id="caseStatusDiagnosis" style="font-size: 16px; font-weight: 600;">${caseStatusLabel}</span>
+    ${gp
+      ? `<div style="margin-bottom: 24px;">
+          <div style="font-size: 18px; font-weight: 600; margin-bottom: 10px;">Gameplan</div>
+          <div style="background: #FFFFFF; border: 1px solid #DEDAD2; border-radius: 8px; padding: 8px 20px;">
+            ${gp.steps.map((s, i) => renderStep(s, i, c, actingUser, readOnly)).join("")}
           </div>
+        </div>`
+      : ""}
 
-          <div style="display: flex; align-items: center; justify-content: space-between; padding: 9px 0; border-top: 1px solid #F0EEE9;">
-            <span style="display: flex; align-items: center; gap: 6px; font-size: 15px; color: #6B6A64;">
-              Severity
-              <button onclick="toggleInfo('severityInfo')" aria-label="What does L2 mean?" style="background: none; border: 1px solid #2F6FED; border-radius: 50%; width: 16px; height: 16px; font-size: 13px; line-height: 1; color: #2F6FED; cursor: pointer; padding: 0;">&#9432;</button>
-            </span>
-            <span style="display: flex; align-items: center; gap: 6px; font-size: 16px; font-weight: 600;">
-              <span style="width: 8px; height: 8px; border-radius: 50%; background: #CA8A00; display: inline-block;"></span>
-              ${gameplan.level} &middot; Supervised act
-            </span>
-          </div>
-          <div id="severityInfo" hidden style="margin: 2px 0 4px; padding: 14px 16px; background: #F0EEEB; border-radius: 6px; font-size: 14px; color: #333230; line-height: 1.7;">
-            <div><span class="mono" style="font-weight: 600;">L0</span> Observe only &mdash; human only, no remote actuation (smoke/thermal/HV anomaly)</div>
-            <div><span class="mono" style="font-weight: 600;">L1</span> Recommend &mdash; agent writes RCA + playbook, human approves</div>
-            <div><span class="mono" style="font-weight: 600;">L2</span> Supervised act &mdash; agent can execute if confidence &ge; threshold AND a human clicks approve</div>
-            <div><span class="mono" style="font-weight: 600;">L3</span> Narrow auto &mdash; agent may auto-propose OTA to an allow-listed version; reflash still needs a human step</div>
-            <div><span class="mono" style="font-weight: 600;">L4</span> Physical world &mdash; dispatch technician / recovery truck; never auto, ops confirms</div>
-            <div style="margin-top: 8px;"><a href="https://app.notion.com/p/3e7d8d4faccd81058155fbce4e41654a" target="_blank">Full permission ladder &mdash; Field RCA design doc &sect;5.3 &rarr;</a></div>
-          </div>
-
-          <div style="display: flex; align-items: center; justify-content: space-between; padding: 9px 0; border-top: 1px solid #F0EEE9;">
-            <span style="font-size: 15px; color: #6B6A64;">Firmware</span>
-            <span style="font-size: 16px; font-weight: 600;">3.2.1 <span style="color: #B42318; font-weight: 400;">&middot; stale (allow-list 3.4.0)</span></span>
-          </div>
-
-          <div style="display: flex; align-items: center; justify-content: space-between; padding: 9px 0; border-top: 1px solid #F0EEE9;">
-            <span style="display: flex; align-items: center; gap: 6px; font-size: 15px; color: #6B6A64;">
-              Health
-              <button onclick="toggleInfo('healthInfo')" aria-label="What does Degraded mean?" style="background: none; border: 1px solid #2F6FED; border-radius: 50%; width: 16px; height: 16px; font-size: 13px; line-height: 1; color: #2F6FED; cursor: pointer; padding: 0;">&#9432;</button>
-            </span>
-            <span style="display: flex; align-items: center; gap: 6px; font-size: 16px; font-weight: 600;">
-              <span style="width: 8px; height: 8px; border-radius: 50%; background: #CA8A00; display: inline-block;"></span>
-              Degraded
-            </span>
-          </div>
-          <div id="healthInfo" hidden style="margin: 2px 0 4px; padding: 14px 16px; background: #F0EEEB; border-radius: 6px; font-size: 14px; color: #333230; line-height: 1.7;">
-            <div><span class="mono" style="font-weight: 600;">Healthy</span> &mdash; no active fault code; efficiency/thermal within trailing baseline; comms stable</div>
-            <div><span class="mono" style="font-weight: 600;">Degraded</span> &mdash; still operating, one or more soft indicators off (efficiency, temp, or intermittent comms) &mdash; no hard fault active. <strong>This unit is Degraded because of intermittent CAN comms (see Evidence viewer).</strong></div>
-            <div><span class="mono" style="font-weight: 600;">Fault</span> &mdash; a hard fault or safety signature is active (always clamps to L0)</div>
-            <div><span class="mono" style="font-weight: 600;">Offline</span> &mdash; no recent telemetry; can't evaluate</div>
-            <div style="margin-top: 8px; color: #6B6A64;">v0 &mdash; not yet implemented, may change.</div>
-            <div style="margin-top: 4px;"><a href="https://app.notion.com/p/3e7d8d4faccd81058155fbce4e41654a" target="_blank">Health status definitions (v0) &mdash; Field RCA design doc &sect;9a &rarr;</a></div>
-          </div>
-
-          <div style="display: flex; align-items: center; justify-content: space-between; padding: 9px 0; border-top: 1px solid #F0EEE9;">
-            <span style="font-size: 15px; color: #6B6A64;">Installed</span>
-            <span style="font-size: 16px; font-weight: 600;">2026-03-11 <span style="color: #8A8880; font-weight: 400;">&middot; 199 days ago</span></span>
-          </div>
-        </div>
-
-        <div style="background: #FFFFFF; border: 1px solid #DEDAD2; border-radius: 8px; padding: 24px;">
-          <div style="font-size: 13px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; color: #6B6A64; margin-bottom: 10px;">What we think is wrong</div>
-          <div class="mono" style="font-size: 24px; font-weight: 600;">${hypothesis.rootCauseClass}</div>
-          <div style="font-size: 15px; color: #6B6A64; margin-top: 4px;">${Math.round(hypothesis.confidence * 100)}% confidence &middot; ${hypothesis.humanSummary} (see Evidence viewer &amp; Hypothesis panel)</div>
-
-          <div style="margin-top: 20px; padding-top: 18px; border-top: 1px solid #F0EEE9; display: flex; align-items: center; justify-content: space-between;">
-            <div>
-              <div style="font-size: 13px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; color: #6B6A64; margin-bottom: 6px;">Recommended next step</div>
-              <div style="font-size: 17px;"><span class="mono" style="font-weight: 600;">${gameplan.recommendedActionId}</span> <span style="color: #6B6A64;">&middot; ${gameplan.humanSummary}</span></div>
-              <div style="margin-top: 6px; font-size: 14px; font-weight: 600;"><span id="actionStatusLabelDiagnosis" style="color: ${statusColor};">${statusLabel}</span></div>
-            </div>
-            <a href="#action" style="background: #1E4D2B; color: #FFFFFF; border-radius: 6px; padding: 10px 16px; font-size: 15px; font-weight: 700; white-space: nowrap; text-decoration: none; display: inline-block;">Review in Action &rarr;</a>
-          </div>
-        </div>
-
-        </div>
-        <div style="font-size: 14px; color: #8A8880;">Jump to any section above for the full evidence, timeline, notes and approval record behind this diagnosis.</div>
+    <div style="margin-bottom: 24px;">
+      <div style="font-size: 18px; font-weight: 600; margin-bottom: 10px;">Timeline</div>
+      <div style="background: #FFFFFF; border: 1px solid #DEDAD2; border-radius: 8px; padding: 10px 20px; max-height: 420px; overflow-y: auto;">
+        ${events}
       </div>
     </div>
 
-    <!-- TIMELINE & NOTES (merged: system CaseEvents + human notes, one thread) -->
-    <div id="timeline" style="scroll-margin-top: 16px; margin-bottom: 48px;">
-      <div style="font-size: 22px; font-weight: 600; margin-bottom: 16px;">Timeline &amp; Notes</div>
-      <div style="background: #FFFFFF; border: 1px solid #DEDAD2; border-radius: 8px; padding: 20px 24px;">
-        ${renderCaseThread()}
-        <div style="display: flex; gap: 14px; padding: 8px 0; border-top: 1px solid #F0EEE9;">
-          <span class="mono" id="timelineFinalTime" style="width: 84px; flex-shrink: 0; font-size: 13px; color: #8A8880; padding-top: 2px;">${timelineFinalTime}</span>
-          <span style="width: 96px; flex-shrink: 0; font-size: 13px; font-weight: 600; color: #4A4944; padding-top: 2px;" id="timelineFinalActor">${timelineFinalActor}</span>
-          <span style="font-size: 16px; color: #292826;" id="timelineFinalLabel">${timelineFinalLabel}</span>
-        </div>
-      </div>
-    </div>
-
-    <!-- EVIDENCE VIEWER -->
-    <div id="evidence" style="scroll-margin-top: 16px; margin-bottom: 48px;">
-      <div style="background: #FFFFFF; border: 1px solid #DEDAD2; border-radius: 8px; padding: 20px 24px;">
-        <div style="font-size: 15px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; color: #6B6A64; margin-bottom: 14px;">Evidence viewer</div>
-        <div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px;">
-          <div style="border: 1px solid #EDEBE5; border-radius: 6px; padding: 14px;">
-            <div style="font-size: 14px; font-weight: 600; color: #4A4944; margin-bottom: 2px;">Efficiency (%)</div>
-            <div style="font-size: 12px; color: #8A8880; margin-bottom: 8px;">08:00 &ndash; 09:45, 15 min buckets</div>
-            <div style="display: flex; gap: 8px;">
-              <div style="display: flex; flex-direction: column; justify-content: space-between; height: 120px; font-size: 12px; color: #8A8880; text-align: right; width: 36px; flex-shrink: 0;">
-                <span>100%</span><span>80%</span><span>60%</span>
-              </div>
-              <div style="position: relative; flex: 1; height: 120px;">
-                <div style="position: absolute; left: 0; right: 0; bottom: ${tempBaselineY}px; border-top: 1px dashed #8A8880;"></div>
-                <div style="position: absolute; right: 0; bottom: calc(${tempBaselineY}px + 3px); font-size: 12px; color: #6B6A64; background: #FFFFFF; padding: 0 4px;">baseline 89%</div>
-                <div id="tempBars" style="position: absolute; inset: 0; display: flex; align-items: flex-end; gap: 4px;">${renderBars(tempValues, tempMin, tempMax, tempThreshold, 5, "temp")}</div>
-              </div>
-            </div>
-            <div style="display: flex; gap: 4px; padding-left: 44px; margin-top: 4px;">${renderTimes()}</div>
-            <div style="margin-top: 10px; padding-top: 10px; border-top: 1px solid #F0EEE9; font-size: 14px; color: #292826;">Selected: <strong class="mono" id="tempSelectedLabel">09:15 &mdash; 71% (baseline 89%, -18pt)</strong></div>
-          </div>
-          <div style="border: 1px solid #EDEBE5; border-radius: 6px; padding: 14px;">
-            <div style="font-size: 14px; font-weight: 600; color: #4A4944; margin-bottom: 2px;">Dropped frames / min</div>
-            <div style="font-size: 12px; color: #8A8880; margin-bottom: 8px;">08:00 &ndash; 09:45, 15 min buckets</div>
-            <div style="display: flex; gap: 8px;">
-              <div style="display: flex; flex-direction: column; justify-content: space-between; height: 120px; font-size: 12px; color: #8A8880; text-align: right; width: 36px; flex-shrink: 0;">
-                <span>120</span><span>60</span><span>0</span>
-              </div>
-              <div style="position: relative; flex: 1; height: 120px;">
-                <div style="position: absolute; left: 0; right: 0; bottom: ${canThresholdY}px; border-top: 1px dashed #B42318;"></div>
-                <div style="position: absolute; right: 0; bottom: calc(${canThresholdY}px + 3px); font-size: 12px; color: #B42318; background: #FFFFFF; padding: 0 4px;">threshold 45/min</div>
-                <div style="position: absolute; left: 0; right: 0; bottom: ${canBaselineY}px; border-top: 1px dashed #8A8880;"></div>
-                <div style="position: absolute; left: 0; bottom: calc(${canBaselineY}px - 12px); font-size: 12px; color: #6B6A64; background: #FFFFFF; padding: 0 4px;">baseline 36/min</div>
-                <div id="canBars" style="position: absolute; inset: 0; display: flex; align-items: flex-end; gap: 4px;">${renderBars(canValues, canMin, canMax, canThreshold, 5, "can")}</div>
-              </div>
-            </div>
-            <div style="display: flex; gap: 4px; padding-left: 44px; margin-top: 4px;">${renderTimes()}</div>
-            <div style="margin-top: 10px; padding-top: 10px; border-top: 1px solid #F0EEE9; font-size: 14px; color: #292826;">Selected: <strong class="mono" id="canSelectedLabel">09:15 &mdash; 112 dropped frames/min (3.1&times; the 36/min baseline)</strong></div>
-            <div style="font-size: 13px; color: #8A8880; margin-top: 4px;">3 bus-off events recorded during the spike bucket</div>
-          </div>
-        </div>
-
-        <div style="border: 1px solid #EDEBE5; border-radius: 6px; padding: 14px; margin-top: 16px;">
-          <div style="font-size: 14px; font-weight: 600; color: #4A4944; margin-bottom: 10px;">Device info</div>
-          <div style="display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px;">
-            <div><div style="font-size: 13px; color: #8A8880;">Firmware</div><div class="mono" style="font-size: 15px; font-weight: 600; margin-top: 2px;">3.2.1</div></div>
-            <div><div style="font-size: 13px; color: #8A8880;">Boot reason</div><div style="font-size: 15px; font-weight: 600; margin-top: 2px;">Watchdog reset</div></div>
-            <div><div style="font-size: 13px; color: #8A8880;">Uptime</div><div style="font-size: 15px; font-weight: 600; margin-top: 2px;">14d 6h</div></div>
-            <div><div style="font-size: 13px; color: #8A8880;">Connectivity</div><div style="font-size: 15px; font-weight: 600; margin-top: 2px;">Cellular &middot; -78 dBm</div></div>
-          </div>
-        </div>
-
-        <div style="border: 1px solid #EDEBE5; border-radius: 6px; padding: 14px; margin-top: 16px;">
-          <div style="font-size: 14px; font-weight: 600; color: #4A4944; margin-bottom: 10px;">Recent OTA / reboot history</div>
-          <div style="display: flex; gap: 12px; padding: 7px 0; border-top: 1px solid #F0EEE9;">
-            <span class="mono" style="width: 130px; flex-shrink: 0; font-size: 13px; color: #8A8880; padding-top: 1px;">2026-09-20 09:14</span>
-            <span style="font-size: 15px; color: #292826;">Remote reboot (soft fault, resolved)</span>
-          </div>
-          <div style="display: flex; gap: 12px; padding: 7px 0; border-top: 1px solid #F0EEE9;">
-            <span class="mono" style="width: 130px; flex-shrink: 0; font-size: 13px; color: #8A8880; padding-top: 1px;">2026-08-30 02:00</span>
-            <span style="font-size: 15px; color: #B42318;">OTA update attempted &rarr; 3.3.0 (failed, rolled back to 3.2.1)</span>
-          </div>
-          <div style="display: flex; gap: 12px; padding: 7px 0; border-top: 1px solid #F0EEE9;">
-            <span class="mono" style="width: 130px; flex-shrink: 0; font-size: 13px; color: #8A8880; padding-top: 1px;">2026-08-02 14:00</span>
-            <span style="font-size: 15px; color: #1D6F3E;">OTA update &rarr; 3.2.1 (success)</span>
-          </div>
-          <div style="font-size: 13px; color: #8A8880; margin-top: 8px;">The failed 3.3.0 rollback is why this unit still shows the stale-firmware flag in Diagnosis.</div>
-        </div>
-
-        <div style="display: flex; align-items: center; justify-content: space-between; margin-top: 16px; padding-top: 14px; border-top: 1px solid #F0EEE9;">
-          <div style="display: flex; align-items: center; gap: 8px; font-size: 15px; color: #292826;">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#3D8B3D" stroke-width="2.5"><path d="M4 12l5 5L20 6"/></svg>
-            Commissioning checklist complete
-          </div>
-          <button id="logToggleBtn" onclick="toggleLog()" style="background: none; border: 1px solid #D8D5CC; border-radius: 6px; font-size: 14px; padding: 6px 12px; color: #4A4944; cursor: pointer;">Show raw log</button>
-        </div>
-        <div id="rawLog" hidden class="mono" style="margin-top: 10px; background: #292826; color: #D8D5CC; font-size: 14px; padding: 12px 14px; border-radius: 6px; line-height: 1.6; white-space: pre-line;">09:14:02 CAN0 err_frame count=112 (win=60s)&#10;09:14:11 CAN0 bus-off recovered after 3 retries&#10;09:14:47 node 0x22 heartbeat missed x4&#10;09:15:03 fw: no fault code raised, comms-layer only</div>
-      </div>
-    </div>
-
-    <!-- HYPOTHESIS PANEL -->
-    <div id="hypothesis" style="scroll-margin-top: 16px; margin-bottom: 48px;">
-      <div style="background: #FFFFFF; border: 1px solid #DEDAD2; border-radius: 8px; padding: 20px 24px;">
-        <div style="font-size: 15px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; color: #6B6A64; margin-bottom: 14px;">Hypothesis panel</div>
-        ${renderDifferentials()}
-        <div style="margin-top: 18px; padding-top: 16px; border-top: 1px solid #F0EEE9;">
-          <label style="display: block; font-size: 14px; font-weight: 600; color: #4A4944; margin-bottom: 6px;">Human override &mdash; root cause class</label>
-          <select onchange="handleOverride(this.value)" style="width: 280px; padding: 8px 10px; border: 1px solid #D8D5CC; border-radius: 6px; font-size: 15px; background: #FFFFFF;">
-            ${overrideOptions.map((o) => `<option value="${o.value}">${o.label}</option>`).join("")}
-          </select>
-          <div id="overrideBanner" hidden style="margin-top: 10px; font-size: 14px; color: #9A5B00; background: #FFF3E0; padding: 8px 12px; border-radius: 6px;">
-            Override recorded &mdash; counts toward the agent/engineer disagreement-rate metric.
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <!-- ACTION -->
-    <div id="action" style="scroll-margin-top: 16px; margin-bottom: 48px;">
-      <div style="font-size: 22px; font-weight: 600; margin-bottom: 16px;">Action</div>
-      <div style="display: flex; flex-direction: column; gap: 16px; align-items: stretch;">
-        <div style="background: #FFFFFF; border: 1px solid #DEDAD2; border-radius: 8px; padding: 20px 24px;">
-          <div style="font-size: 13px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; color: #6B6A64;">Current permission level</div>
-          <div style="font-size: 26px; font-weight: 600; margin-top: 4px;">${gameplan.level} &mdash; Supervised act</div>
-        </div>
-        <div style="background: #FFFFFF; border: 1px solid #DEDAD2; border-radius: 8px; padding: 20px 24px;">
-          <div style="font-size: 13px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; color: #6B6A64; margin-bottom: 10px;">Recommended action</div>
-          <div class="mono" style="font-size: 18px; font-weight: 600;">${gameplan.recommendedActionId}</div>
-          <div style="font-size: 15px; color: #6B6A64; margin: 4px 0 16px;">${gameplan.humanSummary}</div>
-          <div style="display: flex; gap: 8px; max-width: 320px;">
-            <button id="approveBtn" onclick="decideAction('approved')" ${decided ? "disabled" : ""} style="flex: 1; background: ${approveBg}; color: ${approveColor}; border: none; border-radius: 6px; padding: 10px 0; font-size: 15px; font-weight: 700; cursor: ${approveCursor};">Approve</button>
-            <button id="rejectBtn" onclick="decideAction('rejected')" ${decided ? "disabled" : ""} style="flex: 1; background: #FFFFFF; color: #DC2626; border: 1px solid #F0B4B4; border-radius: 6px; padding: 10px 0; font-size: 15px; font-weight: 600; cursor: ${approveCursor};">Reject</button>
-          </div>
-          <div style="margin-top: 12px; font-size: 15px; font-weight: 600;"><span id="actionStatusLabelAction" style="color: ${statusColor};">${statusLabel}</span></div>
-
-          <div style="margin-top: 20px; padding-top: 18px; border-top: 1px solid #F0EEE9;">
-            <div style="font-size: 13px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; color: #6B6A64; margin-bottom: 10px;">Approval</div>
-            <div style="font-size: 16px; margin-bottom: 14px;">Status: <span id="approvalStatusLabel" style="font-weight: 600;">${approvalStatusLabel}</span></div>
-            <button id="signBtn" onclick="signClose()" ${signClickable ? "" : "disabled"} style="width: 260px; background: ${signBg}; color: ${signColor}; border: 1px solid ${signBorder}; border-radius: 6px; padding: 10px 0; font-size: 15px; font-weight: 700; cursor: ${signCursor};">${signLabel}</button>
-            <div style="font-size: 14px; color: #8A8880; margin-top: 10px;">Engineer signature only &middot; resolve the recommended action above first.</div>
-            <div id="signedNote" ${closed ? "" : "hidden"} style="font-size: 14px; color: #1E4D2B; margin-top: 8px; font-weight: 600;">Signed by Engineer &middot; just now</div>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <!-- OTHER INFORMATION (placeholder) -->
-    <div id="other" style="scroll-margin-top: 16px;">
-      <div style="background: #FFFFFF; border: 1px dashed #D8D5CC; border-radius: 8px; padding: 24px; color: #6B6A64;">
-        <div style="font-size: 15px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 8px;">Other information</div>
-        <div style="font-size: 16px;">Not yet designed &mdash; reserved for things like install/commissioning history and a link to the technician profile who last visited this asset. Nothing real to show here yet.</div>
-      </div>
-    </div>
+    ${readOnly
+      ? ""
+      : `<div style="background: #FFFFFF; border: 1px solid #DEDAD2; border-radius: 8px; padding: 20px 24px;">
+          <div style="font-size: 13px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; color: #6B6A64;">Close case</div>
+          ${closeUi}
+        </div>`}
 
   </div>
 </div>
 
 <script>
-function jumpToSection(e, id) {
-  e.preventDefault();
-  const header = document.getElementById('stickyHeader');
-  const target = document.getElementById(id);
-  if (!target) return;
-  const headerHeight = header ? header.getBoundingClientRect().height : 0;
-  const targetTop = target.getBoundingClientRect().top + window.scrollY;
-  window.scrollTo({ top: Math.max(0, targetTop - headerHeight), behavior: 'smooth' });
-}
-document.querySelectorAll('a[href^="#"]').forEach((a) => {
-  a.addEventListener('click', (e) => jumpToSection(e, a.getAttribute('href').slice(1)));
-});
+(function () {
+  var caseId = ${JSON.stringify(c.case_id)};
+  var userId = ${JSON.stringify(actingUser.id)};
+  var busy = false;
 
-function toggleInfo(id) {
-  const el = document.getElementById(id);
-  el.hidden = !el.hidden;
-}
-
-function toggleLog() {
-  const log = document.getElementById('rawLog');
-  log.hidden = !log.hidden;
-  document.getElementById('logToggleBtn').textContent = log.hidden ? 'Show raw log' : 'Hide raw log';
-}
-
-function handleOverride(value) {
-  document.getElementById('overrideBanner').hidden = !value;
-}
-
-const CHART_SCALE = (min, max, val) => Math.round(((val - min) / (max - min)) * 120);
-const TEMP_VALUES = ${JSON.stringify(tempValues)};
-const CAN_VALUES = ${JSON.stringify(canValues)};
-const BUCKET_TIMES = ${JSON.stringify(bucketTimes)};
-const TEMP_BASELINE = ${tempBaseline};
-const CAN_BASELINE = ${canBaseline};
-
-function selectBar(kind, idx) {
-  const container = document.getElementById(kind === 'temp' ? 'tempBars' : 'canBars');
-  container.querySelectorAll('.bar > div').forEach((bar, i) => {
-    bar.style.boxShadow = i === idx ? 'inset 0 0 0 2px #292826' : 'none';
-  });
-  if (kind === 'temp') {
-    const v = TEMP_VALUES[idx];
-    const diff = v - TEMP_BASELINE;
-    document.getElementById('tempSelectedLabel').textContent =
-      BUCKET_TIMES[idx] + ' — ' + v + '% (baseline ' + TEMP_BASELINE + '%, ' + (diff > 0 ? '+' : '') + diff + 'pt)';
-  } else {
-    const v = CAN_VALUES[idx];
-    const mult = (v / CAN_BASELINE).toFixed(1);
-    document.getElementById('canSelectedLabel').textContent =
-      BUCKET_TIMES[idx] + ' — ' + v + ' dropped frames/min (' + mult + '× the ' + CAN_BASELINE + '/min baseline)';
+  function api(path, body) {
+    return fetch(path, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) })
+      .then(function (r) { return r.json().catch(function () { return {}; }).then(function (data) { if (!r.ok) throw new Error(data.error || ("HTTP " + r.status)); return data; }); });
   }
-}
-
-function decideAction(state) {
-  fetch('/api/case/1234/decision', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: 'decision=' + state,
-  });
-
-  document.getElementById('approveBtn').disabled = true;
-  document.getElementById('rejectBtn').disabled = true;
-  document.getElementById('approveBtn').style.background = '#EFEDE7';
-  document.getElementById('approveBtn').style.color = '#B0AEA6';
-  document.getElementById('approveBtn').style.cursor = 'default';
-  document.getElementById('rejectBtn').style.cursor = 'default';
-
-  let label, color;
-  if (state === 'approved') {
-    label = 'Approved — executed';
-    color = '#1E4D2B';
-    document.getElementById('timelineFinalTime').textContent = 'now';
-    document.getElementById('timelineFinalActor').textContent = 'OPS';
-    document.getElementById('timelineFinalLabel').textContent = 'Approved — reboot_firmware executed, post-check scheduled in 15 min';
-  } else {
-    label = 'Rejected — escalated to engineer';
-    color = '#DC2626';
-    document.getElementById('timelineFinalTime').textContent = 'now';
-    document.getElementById('timelineFinalActor').textContent = 'OPS';
-    document.getElementById('timelineFinalLabel').textContent = 'Rejected — case escalated for engineer review';
+  function act(path, body) {
+    if (busy) return;
+    busy = true;
+    api(path, body)
+      .catch(function (e) { alert(e.message); })
+      .then(function () { busy = false; location.reload(); });
   }
-  ['actionStatusLabelDiagnosis', 'actionStatusLabelAction'].forEach((id) => {
-    const el = document.getElementById(id);
-    el.textContent = label;
-    el.style.color = color;
+
+  document.addEventListener("click", function (ev) {
+    var el = ev.target.closest("[data-act]");
+    if (!el) return;
+    var d = el.dataset;
+    if (d.act === "approve") {
+      act("/api/response/approve", { case_id: caseId, step_id: d.step, user_id: userId });
+    } else if (d.act === "rejectOpen") {
+      document.getElementById("rejectRow-" + d.step).hidden = false;
+    } else if (d.act === "rejectCancel") {
+      document.getElementById("rejectRow-" + d.step).hidden = true;
+    } else if (d.act === "reject") {
+      var input = document.getElementById("rejectInput-" + d.step);
+      var reason = input ? input.value.trim() : "";
+      if (!reason) { alert("Give a reason to reject"); return; }
+      act("/api/response/reject", { case_id: caseId, step_id: d.step, user_id: userId, reason: reason });
+    } else if (d.act === "close") {
+      var note = document.getElementById("closeNote");
+      act("/api/response/close", { case_id: caseId, user_id: userId, note: note ? note.value : "" });
+    }
   });
-
-  const signBtn = document.getElementById('signBtn');
-  signBtn.disabled = false;
-  signBtn.style.background = '#1E4D2B';
-  signBtn.style.color = '#FFFFFF';
-  signBtn.style.borderColor = '#1E4D2B';
-  signBtn.style.cursor = 'pointer';
-}
-
-function signClose() {
-  fetch('/api/case/1234/close', { method: 'POST' });
-
-  const signBtn = document.getElementById('signBtn');
-  signBtn.disabled = true;
-  signBtn.textContent = 'Signed & Closed ✓';
-  signBtn.style.background = '#EAF3E7';
-  signBtn.style.color = '#1E4D2B';
-  signBtn.style.borderColor = '#EAF3E7';
-  signBtn.style.cursor = 'default';
-
-  document.getElementById('caseStatusDiagnosis').textContent = 'Closed';
-  document.getElementById('approvalStatusLabel').textContent = 'Closed';
-  document.getElementById('signedNote').hidden = false;
-}
+})();
 </script>
 </body>
 </html>`;
+}
+
+const HEAD = `<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Space+Mono:wght@400;500&display=swap">
+<style>
+  body { margin: 0; background: #F0EEEB; font-family: 'Space Grotesk', system-ui, sans-serif; color: #292826; }
+  a { color: #1E4D2B; }
+  a:hover { color: #163A20; }
+  .mono { font-family: 'Space Mono', monospace; }
+  .btn { font-family: inherit; font-size: 13px; font-weight: 600; border-radius: 6px; padding: 6px 14px; cursor: pointer; border: 1px solid transparent; }
+  .btn:disabled { cursor: not-allowed; opacity: 0.45; }
+  .btnPrimary { background: #1E4D2B; color: #FFFFFF; border-color: #1E4D2B; }
+  .btnPrimary:hover:not(:disabled) { background: #163A20; }
+  .btnGhost { background: #FFFFFF; color: #4A4944; border-color: #D8D5CC; }
+  .btnGhost:hover:not(:disabled) { background: #FAFAF8; }
+  .btnDanger { background: #B42318; color: #FFFFFF; border-color: #B42318; }
+  .input { font-family: inherit; font-size: 13px; padding: 6px 10px; border: 1px solid #D8D5CC; border-radius: 6px; background: #FFFFFF; color: #292826; }
+  .step { padding: 10px 0; border-bottom: 1px solid #F0EEE9; }
+  .step:last-child { border-bottom: 0; }
+  .event { display: flex; gap: 10px; padding: 8px 0; border-bottom: 1px solid #F4F3EF; }
+  .event:last-child { border-bottom: 0; }
+</style>`;
+
+function header(role: Role, c: RcaCase | undefined): string {
+  const fleetHref = role === "staff" ? "/fleet" : "/technician";
+  const roleLabel = role === "staff" ? "Staff" : "Technician";
+  const nav =
+    role === "staff"
+      ? `<nav style="position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); display: flex; gap: 10px; background: #EFEDE7; padding: 5px; border-radius: 8px;" aria-label="Dashboard">
+          <a href="/fleet" style="font-size: 17px; font-weight: 600; text-decoration: none; padding: 9px 22px; border-radius: 6px; background: transparent; color: #6B6A64;">Fleet</a>
+          <a href="/case" style="font-size: 17px; font-weight: 600; text-decoration: none; padding: 9px 22px; border-radius: 6px; background: #1E4D2B; color: #FFFFFF;">Case</a>
+          <a href="/response" style="font-size: 17px; font-weight: 600; text-decoration: none; padding: 9px 22px; border-radius: 6px; background: transparent; color: #6B6A64;">Response</a>
+        </nav>`
+      : "";
+  return `<div style="position: sticky; top: 0; z-index: 10; background: #F0EEEB; padding: 20px 40px 0;">
+    <div style="position: relative; display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 14px;">
+      <div style="display: flex; align-items: center; gap: 10px;">
+        <img src="/base_logo.png" alt="Base" style="height: 48px; width: auto; display: block;">
+        <span style="width: 1px; height: 24px; background: #C9C6BD; display: inline-block;"></span>
+        <span style="font-size: 15px; color: #6B6A64; font-weight: 400;">ARCA</span>
+      </div>
+      ${nav}
+      <div style="font-size: 13px; color: #8A8880;">Logged in as <strong style="color: #4A4944;">${roleLabel}</strong> &middot; <a href="/logout" style="color: #6B6A64;">Logout</a></div>
+    </div>
+    <a href="${fleetHref}" style="font-size: 15px; color: #6B6A64; text-decoration: none;">&larr; Open cases</a>
+    <div style="display: flex; align-items: baseline; gap: 12px; margin-top: 6px; padding-bottom: 20px;">
+      <span class="mono" style="font-size: 24px; font-weight: 600; color: #292826;">${c ? esc(c.case_id) : "Case"}</span>
+      ${c ? `<span style="font-size: 17px; color: #6B6A64;">${esc(c.vin)} &middot; ${esc(c.site)}</span>` : ""}
+    </div>
+    <div style="height: 8px; background: #1E4D2B; margin: 0 -40px;"></div>
+  </div>`;
 }

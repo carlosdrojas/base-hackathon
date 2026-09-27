@@ -1,7 +1,38 @@
 // Plain HTML/CSS/vanilla-JS port of the Fleet RCA Dashboard Claude Artifact
 // mockup (Field RCA design doc §8.3). See case-workspace.ts for the sibling
 // Case Workspace port and porting notes.
-import { deriveCaseStatus, type Decision } from "../session-store.js";
+//
+// Every case on this page is a real RcaCase from Carlos's response engine,
+// created only when a fault is planted (POST /api/sim/plant → ingestFaults()).
+// There is no mock/example case data — none is fabricated here.
+// Read-only reuse of Carlos's live response engine (do not edit src/response/*).
+// `engine` is the same singleton dashboard-server.ts already wires up — importing
+// it here just gets a reference, it doesn't construct a second engine.
+import { engine } from "../response/routes.js";
+import { pickTechnician } from "../response/scheduler.js";
+import { loadSeed, type FleetSeed } from "../response/seed.js";
+import type { RcaCase } from "../response/types.js";
+
+export const REGIONS = ["AustinX4"] as const;
+export type Region = (typeof REGIONS)[number];
+
+export interface CaseRow {
+  id: string;
+  asset: string;
+  site: string;
+  sev: "L0" | "L1" | "L2" | "L3" | "L4";
+  rootCause: string;
+  status: string;
+  age: string;
+  assignedTech: string;
+  region: Region;
+}
+
+const techs = [
+  { name: "D. Osei", completion: "88%", tags: "connector-class refresher" },
+  { name: "R. Fenwick", completion: "95%", tags: "—" },
+  { name: "K. Nguyen", completion: "79%", tags: "install checklist, panel access" },
+];
 
 const rootCauseData = [
   { label: "can_link_unreliable", count: 14, max: 14 },
@@ -21,32 +52,6 @@ const fwClusterData = [
 
 const trendVals = [34, 31, 29, 25, 22, 19, 15, 12];
 const trendMax = 34;
-
-export interface CaseRow {
-  id: string;
-  asset: string;
-  site: string;
-  sev: "L0" | "L1" | "L2" | "L3" | "L4";
-  rootCause: string;
-  status: string;
-  age: string;
-  assignedTech: string;
-}
-
-export const allCases: CaseRow[] = [
-  { id: "#1234", asset: "INV-4021", site: "118 Maple Ct", sev: "L2", rootCause: "can_link_unreliable", status: "Investigating", age: "2h", assignedTech: "D. Osei" },
-  { id: "#1235", asset: "COR-0092", site: "44 Birch Ln", sev: "L0", rootCause: "thermal_or_safety_event", status: "Escalated L0", age: "11m", assignedTech: "R. Fenwick" },
-  { id: "#1229", asset: "INV-3987", site: "9 Larkspur Way", sev: "L1", rootCause: "install_commissioning_incomplete", status: "Awaiting engineer review", age: "1d", assignedTech: "K. Nguyen" },
-  { id: "#1230", asset: "INV-4102", site: "118 Maple Ct", sev: "L3", rootCause: "fw_version_mismatch", status: "Action pending approval", age: "4h", assignedTech: "D. Osei" },
-  { id: "#1231", asset: "COR-0071", site: "7 Cedar Ct", sev: "L4", rootCause: "true_hardware_defect", status: "Awaiting field visit", age: "3d", assignedTech: "R. Fenwick" },
-  { id: "#1227", asset: "INV-3987", site: "9 Larkspur Way", sev: "L1", rootCause: "no_fault_found", status: "Closed", age: "6d", assignedTech: "K. Nguyen" },
-];
-
-const techs = [
-  { name: "D. Osei", completion: "88%", tags: "connector-class refresher" },
-  { name: "R. Fenwick", completion: "95%", tags: "—" },
-  { name: "K. Nguyen", completion: "79%", tags: "install checklist, panel access" },
-];
 
 function renderRootCauses(): string {
   return rootCauseData
@@ -136,17 +141,78 @@ export const sevColors: Record<CaseRow["sev"], { bg: string; color: string }> = 
   L4: { bg: "#EAF3E7", color: "#1E4D2B" },
 };
 
-function repeatTag(site: string): string {
-  const count = allCases.filter((c) => c.site === site).length;
-  return count > 1 ? " ⟳ repeat site" : "";
+const severities = ["ALL", "L0", "L1", "L2", "L3", "L4"];
+
+// Server-rendered (not client JS) so the KPI counts and table genuinely
+// recompute per region on the server, matching how /fleet/technician works.
+function renderRegionFilter(activeRegion: string, rows: LiveCaseRow[]): string {
+  const options: { label: string; value: string }[] = [
+    { label: "ALL", value: "ALL" },
+    ...REGIONS.map((r) => ({ label: `${r} (${rows.filter((c) => c.region === r).length})`, value: r })),
+  ];
+  return options
+    .map(({ label, value }) => {
+      const active = value === activeRegion;
+      const href = value === "ALL" ? "/fleet" : `/fleet?region=${encodeURIComponent(value)}`;
+      return `<a href="${href}" style="text-decoration:none;background:${active ? "#1E4D2B" : "#FFFFFF"};color:${active ? "#FFFFFF" : "#4A4944"};border:1px solid ${active ? "#1E4D2B" : "#D8D5CC"};border-radius:14px;padding:5px 12px;font-size:14px;font-weight:600;">${label}</a>`;
+    })
+    .join("");
 }
 
-function renderCaseRow(c: CaseRow): string {
+function relativeAge(iso: string): string {
+  const mins = Math.max(0, Math.round((Date.now() - new Date(iso).getTime()) / 60000));
+  if (mins < 60) return `${mins}m`;
+  const hours = Math.round(mins / 60);
+  if (hours < 24) return `${hours}h`;
+  return `${Math.round(hours / 24)}d`;
+}
+
+interface LiveCaseRow {
+  id: string;
+  asset: string;
+  site: string;
+  sev: CaseRow["sev"];
+  rootCause: string;
+  status: string;
+  age: string;
+  assignedTech: string;
+  region: Region;
+}
+
+let liveSeed: FleetSeed | null = null;
+
+// Maps one of Carlos's real RcaCase objects onto our own row concepts.
+// - region: his whole simulated fleet is Austin-only (confirmed), so every
+//   case is genuinely "AustinX4" — a true mapping, not an arbitrary label.
+// - assignedTech: his own pickTechnician() skill-match, not reinvented here.
+// - sev: his cases have no L0-L4 field directly. Escalated L0 status maps to
+//   L0 (a real signal); otherwise we fall back to gameplan.level once a
+//   gameplan exists. "L1" for a case with no gameplan yet is a placeholder
+//   default, not an observed severity — cases open at "L1" until Task 2 runs.
+function deriveLiveCaseRow(c: RcaCase): LiveCaseRow {
+  liveSeed ??= loadSeed();
+  const rootCause = c.hypothesis?.root_cause ?? "unknown";
+  const sev: CaseRow["sev"] = c.status === "Escalated L0" ? "L0" : c.gameplan?.level ?? "L1";
+  const assignedTech = pickTechnician(rootCause, liveSeed).name;
+  return {
+    id: c.case_id,
+    asset: c.vin,
+    site: c.site,
+    sev,
+    rootCause,
+    status: c.status,
+    age: relativeAge(c.opened_at),
+    assignedTech,
+    region: "AustinX4",
+  };
+}
+
+function renderLiveCaseRow(c: LiveCaseRow): string {
   const sc = sevColors[c.sev];
-  return `<div class="caseRow" data-sev="${c.sev}" onclick="window.location.href='/case'" style="display:grid;grid-template-columns:70px 100px 1fr 60px 220px 160px 60px;gap:10px;padding:10px 6px;font-size:15px;border-bottom:1px solid #F0EEE9;align-items:center;cursor:pointer;">
+  return `<div class="caseRow" data-sev="${c.sev}" onclick="window.location.href='/case?case_id=${encodeURIComponent(c.id)}'" style="display:grid;grid-template-columns:70px 100px 1fr 60px 220px 160px 60px;gap:10px;padding:10px 6px;font-size:15px;border-bottom:1px solid #F0EEE9;align-items:center;cursor:pointer;">
     <span class="mono">${c.id}</span>
     <span class="mono">${c.asset}</span>
-    <span>${c.site} <span style="color:#9A5B00;font-size:13px;">${repeatTag(c.site)}</span></span>
+    <span>${c.site}</span>
     <span style="background:${sc.bg};color:${sc.color};font-size:13px;font-weight:600;padding:2px 8px;border-radius:4px;width:fit-content;">${c.sev}</span>
     <span class="mono" style="font-size:14px;color:#4A4944;">${c.rootCause}</span>
     <span style="color:#4A4944;">${c.status}</span>
@@ -154,26 +220,56 @@ function renderCaseRow(c: CaseRow): string {
   </div>`;
 }
 
-const severities = ["ALL", "L0", "L1", "L2", "L3", "L4"];
-
-function renderFilters(): string {
+function renderLiveFilters(): string {
   return severities
     .map((s) => {
       const active = s === "ALL";
-      return `<button class="sevFilter" data-sev="${s}" onclick="filterCases('${s}')" style="background:${active ? "#292826" : "#FFFFFF"};color:${active ? "#FFFFFF" : "#4A4944"};border:1px solid ${active ? "#292826" : "#D8D5CC"};border-radius:14px;padding:5px 12px;font-size:14px;font-weight:600;cursor:pointer;">${s}</button>`;
+      return `<button class="liveSevFilter" data-sev="${s}" onclick="filterLiveCases('${s}')" style="background:${active ? "#292826" : "#FFFFFF"};color:${active ? "#FFFFFF" : "#4A4944"};border:1px solid ${active ? "#292826" : "#D8D5CC"};border-radius:14px;padding:5px 12px;font-size:14px;font-weight:600;cursor:pointer;">${s}</button>`;
     })
     .join("");
 }
 
-export function renderFleetDashboardPage(decision: Decision, caseClosed: boolean): string {
-  const rows = allCases.map((c) => (c.id === "#1234" ? { ...c, status: deriveCaseStatus(decision, caseClosed) } : c));
+// Whole table is server-rendered from a synchronous engine.getState() call —
+// simpler than a client-side fetch, and just as correct: getState() isn't a
+// Promise, so there's no reason to add fetch/loading-state complexity for a
+// value we already have at render time. Re-renders fresh on every page load.
+function renderCasesTable(rows: LiveCaseRow[], activeRegion: string): string {
   const openRows = rows.filter((c) => c.status !== "Closed");
   const closedRows = rows.filter((c) => c.status === "Closed");
+  return `<div style="background: #FFFFFF; border: 1px solid #DEDAD2; border-radius: 8px; padding: 18px 20px; margin-bottom: 24px;">
+    <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px;">
+      <div style="font-size: 14px; font-weight: 600; color: #4A4944;">Open cases${activeRegion !== "ALL" ? ` &mdash; ${activeRegion}` : ""}<span class="tip" data-tip="Real RcaCase objects from Carlos's response engine, created only when a fault is planted — region/assignedTech/severity are derived from his real data.">?</span></div>
+      <div id="liveSevFilters" style="display: flex; gap: 6px;">${renderLiveFilters()}</div>
+    </div>
+    <div style="display: grid; grid-template-columns: 70px 100px 1fr 60px 220px 160px 60px; gap: 10px; padding: 8px 6px; font-size: 13px; font-weight: 600; color: #6B6A64; text-transform: uppercase; letter-spacing: 0.03em; border-bottom: 1px solid #DEDAD2;">
+      <span>Case#</span><span>Asset</span><span>Site</span><span>Sev</span><span>Root cause</span><span>Status</span><span>Age</span>
+    </div>
+    <div id="liveCaseRows">${openRows.length ? openRows.map(renderLiveCaseRow).join("") : `<div style="padding: 16px 6px; color: #8A8880;">No open cases yet &mdash; plant a fault on the Response agent page to create one.</div>`}</div>
+    <details style="margin-top: 16px; border-top: 1px solid #DEDAD2; padding-top: 12px;">
+      <summary style="cursor: pointer; font-size: 14px; font-weight: 600; color: #6B6A64; list-style: revert;">Closed cases (${closedRows.length})</summary>
+      <div style="margin-top: 10px;">
+        <div style="display: grid; grid-template-columns: 70px 100px 1fr 60px 220px 160px 60px; gap: 10px; padding: 8px 6px; font-size: 13px; font-weight: 600; color: #6B6A64; text-transform: uppercase; letter-spacing: 0.03em; border-bottom: 1px solid #DEDAD2;">
+          <span>Case#</span><span>Asset</span><span>Site</span><span>Sev</span><span>Root cause</span><span>Status</span><span>Age</span>
+        </div>
+        ${closedRows.length ? closedRows.map(renderLiveCaseRow).join("") : `<div style="padding: 16px 6px; color: #8A8880;">No closed cases yet.</div>`}
+      </div>
+    </details>
+  </div>`;
+}
+
+export function renderFleetDashboardPage(region: string = "ALL"): string {
+  const activeRegion = (REGIONS as readonly string[]).includes(region) ? region : "ALL";
+  const allRows = engine.getState().cases.map(deriveLiveCaseRow);
+  const rows = activeRegion === "ALL" ? allRows : allRows.filter((c) => c.region === activeRegion);
+  // Root-cause histogram / FW clusters / false-pull trend below are separate
+  // illustrative fleet-wide datasets, not derived from real cases — they
+  // intentionally stay fleet-wide regardless of the region filter.
+  const openCasesKpi = String(rows.filter((c) => c.status !== "Closed").length);
   return `<!doctype html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<title>Fleet RCA Dashboard</title>
+<title>Fleet Dashboard — ARCA</title>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Space+Mono:wght@400;500&display=swap">
 <style>
   body { margin: 0; background: #F0EEEB; font-family: 'Space Grotesk', system-ui, sans-serif; color: #292826; }
@@ -210,6 +306,14 @@ export function renderFleetDashboardPage(decision: Decision, caseClosed: boolean
     border-top-color: #292826;
     z-index: 20;
   }
+  .btn { font-family: inherit; font-size: 13px; font-weight: 600; border-radius: 6px; padding: 5px 12px; cursor: pointer; border: 1px solid transparent; }
+  .btnGhost { background: #FFFFFF; color: #4A4944; border-color: #D8D5CC; }
+  .btnGhost:hover:not(:disabled) { background: #FAFAF8; }
+  .chip { display: inline-block; font-size: 12px; font-weight: 600; padding: 2px 8px; border-radius: 4px; white-space: nowrap; }
+  .unit { background: #FFFFFF; border: 1px solid #DEDAD2; border-radius: 8px; padding: 10px 12px; }
+  .menu { position: absolute; top: 100%; left: 0; margin-top: 4px; z-index: 30; background: #FFFFFF; border: 1px solid #DEDAD2; border-radius: 8px; box-shadow: 0 8px 24px rgba(0,0,0,0.12); padding: 4px; min-width: 250px; }
+  .menuItem { display: block; width: 100%; text-align: left; background: none; border: 0; padding: 6px 8px; font-size: 12px; color: #292826; border-radius: 4px; cursor: pointer; }
+  .menuItem:hover { background: #F0EEEB; }
 </style>
 </head>
 <body>
@@ -218,20 +322,18 @@ export function renderFleetDashboardPage(decision: Decision, caseClosed: boolean
 
   <!-- HEADER -->
   <div style="position: sticky; top: 0; z-index: 10; background: #F0EEEB; padding: 20px 40px 0;">
-    <div style="display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 14px;">
+    <div style="position: relative; display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 14px;">
       <div style="display: flex; align-items: center; gap: 10px;">
         <img src="/base_logo.png" alt="Base" style="height: 48px; width: auto; display: block;">
         <span style="width: 1px; height: 24px; background: #C9C6BD; display: inline-block;"></span>
-        <span style="font-size: 15px; color: #6B6A64; font-weight: 400;">Field RCA</span>
+        <span style="font-size: 15px; color: #6B6A64; font-weight: 400;">ARCA</span>
       </div>
-      <div style="display: flex; align-items: center; gap: 18px;">
-        <nav style="display: flex; gap: 12px;">
-          <a href="/fleet" style="font-size: 14px; color: #1E4D2B; font-weight: 600; text-decoration: none;">Fleet</a>
-          <a href="/case" style="font-size: 14px; color: #6B6A64; text-decoration: none;">Case</a>
-          <a href="/response" style="font-size: 14px; color: #6B6A64; text-decoration: none;">Response</a>
-        </nav>
-        <div style="font-size: 13px; color: #8A8880;">Logged in as <strong style="color: #4A4944;">Staff</strong> &middot; <a href="/logout" style="color: #6B6A64;">Logout</a></div>
-      </div>
+      <nav style="position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); display: flex; gap: 10px; background: #EFEDE7; padding: 5px; border-radius: 8px;" aria-label="Dashboard">
+        <a href="/fleet" style="font-size: 17px; font-weight: 600; text-decoration: none; padding: 9px 22px; border-radius: 6px; background: #1E4D2B; color: #FFFFFF;">Fleet</a>
+        <a href="/case" style="font-size: 17px; font-weight: 600; text-decoration: none; padding: 9px 22px; border-radius: 6px; background: transparent; color: #6B6A64;">Case</a>
+        <a href="/response" style="font-size: 17px; font-weight: 600; text-decoration: none; padding: 9px 22px; border-radius: 6px; background: transparent; color: #6B6A64;">Response</a>
+      </nav>
+      <div style="font-size: 13px; color: #8A8880;">Logged in as <strong style="color: #4A4944;">Staff</strong> &middot; <a href="/logout" style="color: #6B6A64;">Logout</a></div>
     </div>
     <div style="font-size: 24px; font-weight: 600; color: #292826;">Fleet RCA dashboard</div>
     <div style="font-size: 15px; color: #6B6A64; margin-top: 2px; padding-bottom: 20px;">Entry point into individual Cases &mdash; click a row to open its Case workspace.</div>
@@ -271,11 +373,17 @@ export function renderFleetDashboardPage(decision: Decision, caseClosed: boolean
   })();
   </script>
 
+  <!-- REGION FILTER -->
+  <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 16px;">
+    <span style="font-size: 13px; font-weight: 600; color: #6B6A64; text-transform: uppercase; letter-spacing: 0.03em;">Region</span>
+    <div style="display: flex; gap: 6px;">${renderRegionFilter(activeRegion, allRows)}</div>
+  </div>
+
   <!-- KPI ROW -->
   <div style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; margin-bottom: 24px;">
     <div style="background: #FFFFFF; border: 1px solid #DEDAD2; border-radius: 8px; padding: 16px 18px;">
-      <div style="font-size: 13px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; color: #6B6A64;">Open cases<span class="tip" data-tip="Cases currently active across the fleet — detected and not yet closed, at any severity or stage.">?</span></div>
-      <div style="font-size: 30px; font-weight: 600; margin-top: 6px;">43</div>
+      <div style="font-size: 13px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; color: #6B6A64;">Open cases<span class="tip" data-tip="Cases currently active${activeRegion === "ALL" ? " across the fleet" : " in " + activeRegion} — detected and not yet closed, at any severity or stage.">?</span></div>
+      <div style="font-size: 30px; font-weight: 600; margin-top: 6px;">${openCasesKpi}</div>
     </div>
     <div style="background: #FFFFFF; border: 1px solid #DEDAD2; border-radius: 8px; padding: 16px 18px;">
       <div style="font-size: 13px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; color: #6B6A64;">Agent / eng agreement<span class="tip" data-tip="Share of cases where the agent's root-cause hypothesis matched what the reviewing engineer concluded.">?</span></div>
@@ -311,29 +419,7 @@ export function renderFleetDashboardPage(decision: Decision, caseClosed: boolean
 
   </div>
 
-  <!-- OPEN CASES TABLE -->
-  <div style="background: #FFFFFF; border: 1px solid #DEDAD2; border-radius: 8px; padding: 18px 20px; margin-bottom: 24px;">
-    <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px;">
-      <div style="font-size: 14px; font-weight: 600; color: #4A4944;">Open cases</div>
-      <div id="sevFilters" style="display: flex; gap: 6px;">${renderFilters()}</div>
-    </div>
-
-    <div style="display: grid; grid-template-columns: 70px 100px 1fr 60px 220px 160px 60px; gap: 10px; padding: 8px 6px; font-size: 13px; font-weight: 600; color: #6B6A64; text-transform: uppercase; letter-spacing: 0.03em; border-bottom: 1px solid #DEDAD2;">
-      <span>Case#</span><span>Asset</span><span>Site</span><span>Sev</span><span>Root cause</span><span>Status</span><span>Age</span>
-    </div>
-
-    <div id="caseRows">${openRows.map(renderCaseRow).join("")}</div>
-
-    <details style="margin-top: 16px; border-top: 1px solid #DEDAD2; padding-top: 12px;">
-      <summary style="cursor: pointer; font-size: 14px; font-weight: 600; color: #6B6A64; list-style: revert;">Closed cases (${closedRows.length})</summary>
-      <div style="margin-top: 10px;">
-        <div style="display: grid; grid-template-columns: 70px 100px 1fr 60px 220px 160px 60px; gap: 10px; padding: 8px 6px; font-size: 13px; font-weight: 600; color: #6B6A64; text-transform: uppercase; letter-spacing: 0.03em; border-bottom: 1px solid #DEDAD2;">
-          <span>Case#</span><span>Asset</span><span>Site</span><span>Sev</span><span>Root cause</span><span>Status</span><span>Age</span>
-        </div>
-        ${closedRows.length ? closedRows.map(renderCaseRow).join("") : `<div style="padding: 16px 6px; color: #8A8880;">No closed cases yet.</div>`}
-      </div>
-    </details>
-  </div>
+  ${renderCasesTable(rows, activeRegion)}
 
   <!-- TECHNICIAN VIEW -->
   <div style="background: #FFFFFF; border: 1px solid #DEDAD2; border-radius: 8px; padding: 18px 20px;">
@@ -357,14 +443,14 @@ export function renderFleetDashboardPage(decision: Decision, caseClosed: boolean
 </div>
 
 <script>
-function filterCases(sev) {
-  document.querySelectorAll('.sevFilter').forEach((btn) => {
+function filterLiveCases(sev) {
+  document.querySelectorAll('.liveSevFilter').forEach((btn) => {
     const active = btn.dataset.sev === sev;
     btn.style.background = active ? '#292826' : '#FFFFFF';
     btn.style.color = active ? '#FFFFFF' : '#4A4944';
     btn.style.borderColor = active ? '#292826' : '#D8D5CC';
   });
-  document.querySelectorAll('#caseRows .caseRow').forEach((row) => {
+  document.querySelectorAll('#liveCaseRows .caseRow').forEach((row) => {
     row.style.display = sev === 'ALL' || row.dataset.sev === sev ? 'grid' : 'none';
   });
 }
@@ -373,19 +459,18 @@ function filterCases(sev) {
 </html>`;
 }
 
-// Staff-facing drill-down from the Technician view table: all appointments
-// (cases) currently assigned to one technician.
-export function renderTechnicianAppointmentsPage(techName: string, decision: Decision, caseClosed: boolean): string {
+// Staff-facing drill-down from the Technician view table: all real cases
+// currently assigned to one technician (assignedTech is Carlos's own
+// pickTechnician() skill-match, same as the Open cases table on /fleet).
+export function renderTechnicianAppointmentsPage(techName: string): string {
   const tech = techs.find((t) => t.name === techName);
-  const assigned = allCases
-    .filter((c) => c.assignedTech === techName)
-    .map((c) => (c.id === "#1234" ? { ...c, status: deriveCaseStatus(decision, caseClosed) } : c));
+  const assigned = engine.getState().cases.map(deriveLiveCaseRow).filter((c) => c.assignedTech === techName);
 
   return `<!doctype html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<title>${techName || "Technician"} — Appointments — Field RCA</title>
+<title>${techName || "Technician"} — Appointments — ARCA</title>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Space+Mono:wght@400;500&display=swap">
 <style>
   body { margin: 0; background: #F0EEEB; font-family: 'Space Grotesk', system-ui, sans-serif; color: #292826; }
@@ -403,7 +488,7 @@ export function renderTechnicianAppointmentsPage(techName: string, decision: Dec
     <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 14px;">
       <img src="/base_logo.png" alt="Base" style="height: 48px; width: auto; display: block;">
       <span style="width: 1px; height: 24px; background: #C9C6BD; display: inline-block;"></span>
-      <span style="font-size: 15px; color: #6B6A64; font-weight: 400;">Field RCA</span>
+      <span style="font-size: 15px; color: #6B6A64; font-weight: 400;">ARCA</span>
     </div>
     <a href="/fleet" style="font-size: 15px; color: #6B6A64; text-decoration: none;">&larr; Fleet RCA dashboard</a>
     <div style="display: flex; align-items: baseline; gap: 12px; margin-top: 10px; padding-bottom: 20px;">
@@ -416,11 +501,11 @@ export function renderTechnicianAppointmentsPage(techName: string, decision: Dec
   <!-- BODY -->
   <div style="padding: 32px 40px 80px;">
     <div style="background: #FFFFFF; border: 1px solid #DEDAD2; border-radius: 8px; padding: 18px 20px;">
-      <div style="font-size: 14px; font-weight: 600; color: #4A4944; margin-bottom: 14px;">Assigned appointments (${assigned.length})</div>
+      <div style="font-size: 14px; font-weight: 600; color: #4A4944; margin-bottom: 14px;">Assigned cases (${assigned.length})</div>
       <div style="display: grid; grid-template-columns: 70px 100px 1fr 60px 220px 160px 60px; gap: 10px; padding: 8px 6px; font-size: 13px; font-weight: 600; color: #6B6A64; text-transform: uppercase; letter-spacing: 0.03em; border-bottom: 1px solid #DEDAD2;">
         <span>Case#</span><span>Asset</span><span>Site</span><span>Sev</span><span>Root cause</span><span>Status</span><span>Age</span>
       </div>
-      ${assigned.length ? assigned.map(renderCaseRow).join("") : `<div style="padding: 24px 6px; color: #8A8880;">No appointments currently assigned.</div>`}
+      ${assigned.length ? assigned.map((c) => renderLiveCaseRow(c)).join("") : `<div style="padding: 24px 6px; color: #8A8880;">No cases currently assigned.</div>`}
     </div>
   </div>
 
