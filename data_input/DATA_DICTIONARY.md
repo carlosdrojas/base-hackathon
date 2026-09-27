@@ -87,6 +87,8 @@ Computed from measurements already on the row:
 - `gateway_offline` is Y when `gateway_online` is 0.
 - `fw_on_signed_manifest` is the allow-list comparison.
 
+`fixtures/packets/{vin}.json` overlays a row when an evidence pack is opened. `fixtures/logs/` holds the canned watchdog, bus-off, cell-overtemp, and NFF snippets. Those attach to the case. They are not drawn on the map.
+
 CAN counters, boot reason, house load, and playbook flags were not in the original snapshot. On the 48 inventory rows they are filled as "no extra signature" (zeros, `power_on`, playbooks not done). The `fixture_*` rows are where those comparisons are actually planted. `expected_root_cause`, `expected_level`, and `expected_action` are the answer key for `npm test`.
 
 ## RCA cheat for fan-never-installed

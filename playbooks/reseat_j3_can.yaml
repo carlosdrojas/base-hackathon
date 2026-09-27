@@ -1,0 +1,12 @@
+id: reseat_j3_can_capture_counters
+version: 1
+class: can_link_unreliable
+max_level: L4
+action: dispatch_technician
+photos_required: [connector_seating, harness_strain]
+checklist:
+  - Capture CAN error counters before touch
+  - Reseat J3 until latch clicks
+  - Recapture counters; bus-off must be 0
+  - Do not pull inverter if counters clear
+alerts: [tech, ops]

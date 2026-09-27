@@ -38,22 +38,12 @@ import {
   type RailEvidence,
   type SafetyEvidence,
 } from "./evidence.js";
+import type { PlaybookId } from "../playbooks.js";
 
 export const DETECTOR_VERSION = "1";
 
-export const PLAYBOOK_IDS = [
-  "flag_l0_safety",
-  "ota_allowlisted_fw",
-  "reboot_watchdog",
-  "reseat_can",
-  "commissioning_photos",
-  "wiring_sense_photos",
-  "monitor_grid_home",
-  "nff_monitor",
-  "hq_recovery_last",
-  "hold_unknown",
-] as const;
-export type PlaybookId = (typeof PLAYBOOK_IDS)[number];
+export { PLAYBOOK_IDS } from "../playbooks.js";
+export type { PlaybookId } from "../playbooks.js";
 
 export const DETECTOR_IDS = [
   "src_fault_flag",
@@ -198,7 +188,7 @@ function combine(
       rootCauseClass: "no_fault_found",
       maxLevel: "L1",
       actionId: "mark_no_fault_found_monitor",
-      playbookId: "nff_monitor",
+      playbookId: "monitor_7_days",
       photosRequired: false,
       confidence: 0.9,
       summary: "Rails present, CAN within limits, firmware on the signed manifest, no repeating fault code. Keep the unit in the field.",
@@ -210,7 +200,7 @@ function combine(
       rootCauseClass: "true_hardware_defect",
       maxLevel: "L4",
       actionId: "schedule_hq_recovery",
-      playbookId: "hq_recovery_last",
+      playbookId: "hq_recovery_after_field_playbook",
       photosRequired: false,
       confidence: 0.8,
       summary:
@@ -223,7 +213,7 @@ function combine(
       rootCauseClass: "no_fault_found",
       maxLevel: "L1",
       actionId: "mark_no_fault_found_monitor",
-      playbookId: "nff_monitor",
+      playbookId: "monitor_7_days",
       photosRequired: false,
       confidence: 0.55,
       summary: "No fault flag and no detector signature. This is not a positive healthy-rail proof.",
@@ -346,7 +336,7 @@ function fwAllowList(
       rootCauseClass: "fw_version_mismatch",
       maxLevel: "L3",
       actionId: "ota_allowlisted_fw",
-      playbookId: "ota_allowlisted_fw",
+      playbookId: "ota_allowlisted_version",
       photosRequired: false,
       summary,
     }),
@@ -398,7 +388,7 @@ function fwWatchdog(evidence: DetectorEvidence): { events: FieldEvent[]; finding
       rootCauseClass: "fw_soft_fault_reboot_candidate",
       maxLevel: "L2",
       actionId: "reboot_firmware",
-      playbookId: "reboot_watchdog",
+      playbookId: "reboot_wait_90s_retest",
       photosRequired: false,
       summary: "Repeated watchdog or panic with healthy rails. Reboot is the candidate, not an HQ pull.",
     }),
@@ -455,7 +445,7 @@ function canLink(evidence: DetectorEvidence): { events: FieldEvent[]; finding: D
       rootCauseClass: "can_link_unreliable",
       maxLevel: physical ? "L4" : "L1",
       actionId: physical ? "dispatch_technician" : "request_log_dump",
-      playbookId: "reseat_can",
+      playbookId: "reseat_j3_can_capture_counters",
       photosRequired: physical,
       summary: physical
         ? "CAN bus-off or a missing node. Reseat the connector on a tech visit. Do not pull the unit to HQ."
@@ -559,7 +549,7 @@ function l0Safety(evidence: DetectorEvidence): { events: FieldEvent[]; finding: 
       rootCauseClass: "thermal_or_safety_event",
       maxLevel: "L0",
       actionId: "flag_l0_safety",
-      playbookId: "flag_l0_safety",
+      playbookId: "isolate_no_actuate",
       photosRequired: false,
       confidence: 0.98,
       summary: "L0 safety signature. Flag only. No reboot, no OTA, no further remote tries.",

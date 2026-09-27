@@ -1,0 +1,13 @@
+{
+  "fault_code": "CAN_TIMEOUT",
+  "boot_reason": "watchdog",
+  "uptime_s": 412,
+  "recent_reboots_24h": 3,
+  "connectivity": "lte-ok",
+  "can": {
+    "error_frames_per_min": 180,
+    "dropped": 42,
+    "bus_off": 1,
+    "missing_nodes": ["bms"]
+  }
+}

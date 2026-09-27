@@ -1,0 +1,17 @@
+# Closed action catalog. The model may propose these ids. The gate rejects anything else.
+# max_level is the highest automation this action is allowed to reach.
+actions:
+  flag_l0_safety:
+    max_level: L0
+  mark_no_fault_found_monitor:
+    max_level: L1
+  request_log_dump:
+    max_level: L2
+  reboot_firmware:
+    max_level: L2
+  ota_allowlisted_fw:
+    max_level: L3
+  dispatch_technician:
+    max_level: L4
+  schedule_hq_recovery:
+    max_level: L4

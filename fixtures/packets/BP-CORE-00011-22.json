@@ -1,0 +1,7 @@
+{
+  "fault_code": null,
+  "boot_reason": "power_on",
+  "uptime_s": 86400,
+  "connectivity": "lte-ok",
+  "l0_flags": []
+}
