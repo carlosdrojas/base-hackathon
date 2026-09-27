@@ -14,6 +14,7 @@ import type {
   VisitOutcome,
 } from "../response/types.js";
 import { FAULT_CODES, PLANTABLE_FAULTS, faultCodes } from "./fault-codes.js";
+import { SCENARIOS } from "./core-pack.js";
 
 // Shape of data/sim-fleet.seed.json (not in types.ts; flagged for integration).
 export interface SimSeed {
@@ -28,6 +29,8 @@ export interface SimSeed {
 
 export interface FleetSimOptions {
   seedPath?: string;
+  /** In-memory seed (e.g. the Core telemetry pack); takes precedence over seedPath. */
+  seed?: SimSeed;
   runtimePath?: string;
   /** Seeded reboot flakiness (§4). Defaults to env SIM_FLAKY=1. */
   flaky?: boolean;
@@ -51,12 +54,14 @@ export class FleetSim implements FleetGateway {
   readonly flaky: boolean;
   private readonly now: () => Date;
   private data: SimSeed;
+  private readonly seedData?: SimSeed;
 
   constructor(opts: FleetSimOptions = {}) {
     this.seedPath = opts.seedPath ?? DEFAULT_SEED_PATH;
     this.runtimePath = opts.runtimePath ?? DEFAULT_RUNTIME_PATH;
     this.flaky = opts.flaky ?? process.env.SIM_FLAKY === "1";
     this.now = opts.now ?? (() => new Date());
+    this.seedData = opts.seed ? structuredClone(opts.seed) : undefined;
     if (existsSync(this.runtimePath)) {
       this.data = JSON.parse(readFileSync(this.runtimePath, "utf8")) as SimSeed;
     } else {
@@ -104,7 +109,12 @@ export class FleetSim implements FleetGateway {
       outcome = "info_only";
       detail = `${action} is not a device command; no change to the unit`;
     } else if (action === "monitor") {
-      if (fault === "no_fault_found") {
+      const spec = scenarioOf(u);
+      if (fault && spec?.monitor) {
+        this.clearFault(u);
+        outcome = "cleared";
+        detail = `Monitored: ${spec.monitor}`;
+      } else if (fault === "no_fault_found") {
         this.clearFault(u);
         outcome = "cleared";
         detail = "Monitored: no recurrence, transient latch cleared";
@@ -131,9 +141,15 @@ export class FleetSim implements FleetGateway {
     let outcome: Outcome;
     let detail: string;
 
+    const spec = scenarioOf(u);
     if (!visit.completed) {
       outcome = "no_change";
       detail = `Visit incomplete${visit.incomplete_reason ? ` (${visit.incomplete_reason})` : ""}; unit unchanged`;
+    } else if (fault && spec?.tech) {
+      outcome = spec.tech.outcome;
+      detail = spec.tech.detail;
+      if (outcome === "cleared" || outcome === "nothing_found") this.clearFault(u);
+      if (outcome === "made_safe") u.online = false;
     } else {
       switch (fault) {
         case "fw_soft_fault_reboot_candidate":
@@ -198,6 +214,10 @@ export class FleetSim implements FleetGateway {
     u.fault = fault;
     u.fault_time = this.now().toISOString();
     u.online = true;
+    // A planted fault replaces the pack's scenario: generic §4 behavior and codes apply.
+    delete u.scenario;
+    u.fault_codes = [];
+    if (u.answer_key) u.answer_key = { ...u.answer_key, recommended_action: "planted", expect: "none" };
     this.persist();
   }
 
@@ -214,6 +234,11 @@ export class FleetSim implements FleetGateway {
     }
     const firstTry = !u.action_history.some((r) => r.action === "reboot");
     this.boot(u, "reboot_cmd");
+    const spec = scenarioOf(u);
+    if (u.fault && spec?.reboot) {
+      this.clearFault(u);
+      return { outcome: "cleared", detail: `Rebooted; ${spec.reboot}` };
+    }
     switch (u.fault) {
       case "fw_soft_fault_reboot_candidate":
         if (this.flaky && firstTry && flakyForVin(u.vin)) {
@@ -296,7 +321,7 @@ export class FleetSim implements FleetGateway {
       fw_version: u.fw_version,
       online: u.online,
       faulted: u.fault !== null,
-      active_fault_codes: faultCodes(u.fault),
+      active_fault_codes: u.fault && u.fault_codes?.length ? [...u.fault_codes] : faultCodes(u.fault),
       uptime_s: u.uptime_s,
       last_boot_reason: u.last_boot_reason,
       last_seen: this.now().toISOString(),
@@ -310,6 +335,7 @@ export class FleetSim implements FleetGateway {
   }
 
   private readSeed(): SimSeed {
+    if (this.seedData) return structuredClone(this.seedData);
     return JSON.parse(readFileSync(this.seedPath, "utf8")) as SimSeed;
   }
 
@@ -319,6 +345,11 @@ export class FleetSim implements FleetGateway {
     writeFileSync(tmp, JSON.stringify(this.data, null, 2) + "\n");
     renameSync(tmp, this.runtimePath);
   }
+}
+
+/** Scenario behavior for Core-pack units; undefined on the demo fleet or after a planted fault. */
+function scenarioOf(u: UnitState) {
+  return u.scenario ? SCENARIOS[u.scenario] : undefined;
 }
 
 function readOnlyDetail(action: ActionType, fault: PlantableFault | null): string {

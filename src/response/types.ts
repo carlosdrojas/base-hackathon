@@ -69,6 +69,20 @@ export interface UnitState {
   uptime_s: number;
   last_boot_reason: "power_on" | "WDT" | "reboot_cmd" | "ota";
   action_history: ActionRecord[];
+  /** Base Core telemetry pack only (data_input/). Absent on the 12-unit demo fleet. */
+  scenario?: string; // ground-truth scenario label, never shown to diagnosis or the planner
+  fault_codes?: string[]; // codes the device reports while faulted (from packet detector bits)
+  answer_key?: AnswerKey; // evaluation only
+}
+
+/**
+ * What the telemetry pack says *should* happen to a unit (inventory.csv recommended_action and
+ * do_not_return_hardware). Used only to score outcomes; the agent never sees it.
+ */
+export interface AnswerKey {
+  recommended_action: string; // e.g. "L2_install_missing_fan"
+  expect: "no_truck" | "on_site" | "pull" | "none";
+  do_not_return_hardware: boolean;
 }
 
 export interface ActionRecord {
@@ -301,7 +315,27 @@ export interface ResponseState {
   users: User[];
   metrics: ResponseMetrics;
   planner: "claude" | "playbook"; // which planner is active
+  fleet_source?: FleetSource;
+  fw_allowlist?: string[]; // signed firmware for the active fleet (UI "stale" marker)
+  scorecard?: Scorecard; // present when the fleet carries an answer key
   mocked: true; // UI must label everything as MOCKED
+}
+
+export type FleetSource = "core" | "demo";
+
+export type Verdict = "match" | "miss" | "pending";
+
+/** Outcomes graded against the telemetry pack's answer key (evaluation only, MOCKED data). */
+export interface Scorecard {
+  graded: number; //          resolved cases that have an answer key
+  matched: number;
+  pending: number; //         open cases with an answer key
+  dnr_resolved: number; //    resolved cases where the key says do not return the hardware
+  dnr_kept: number; //        ...of those, resolved without an HQ pull
+  wrong_pulls: number; //     HQ pulls on do-not-return units
+  extra_trucks: number; //    tech visits where the key said no truck was needed
+  missed_pulls: number; //    key says pull, case resolved without one
+  per_case: Record<string, { recommended_action: string; expect: AnswerKey["expect"]; verdict: Verdict; note: string }>;
 }
 
 /** The only API the UI / routes call. */

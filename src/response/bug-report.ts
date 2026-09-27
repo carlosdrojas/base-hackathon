@@ -19,13 +19,19 @@ export interface BugGroup {
 
 const key = (fw: string, rc: string) => `${fw}|${rc}`;
 
+/**
+ * Only causes a firmware build can plausibly own. A cluster of install, thermal or "no fault" cases
+ * on one version is a fleet pattern (installer, site, detector tuning), not a firmware bug.
+ */
+const FIRMWARE_CAUSES = new Set<RootCause>(["fw_soft_fault_reboot_candidate", "fw_version_mismatch", "can_link_unreliable"]);
+
 /** Groups of ≥3 cases sharing (fw_version, root_cause), with no failed fix, that have no report yet. */
 export function findBugGroups(cases: RcaCase[], existing: BugReport[]): BugGroup[] {
   const reported = new Set(existing.map((r) => key(r.fw_version, r.root_cause)));
   const groups = new Map<string, BugGroup>();
   for (const c of cases) {
     const rc = c.hypothesis?.root_cause;
-    if (!rc || rc === "unknown") continue;
+    if (!rc || !FIRMWARE_CAUSES.has(rc)) continue;
     // A failed remote fix means the diagnosis is suspect (e.g. a "soft fault" that was really a
     // loose connector), so it isn't evidence of a firmware-wide problem.
     if (c.gameplan?.steps.some((s) => s.state === "failed")) continue;

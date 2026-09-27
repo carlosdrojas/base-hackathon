@@ -9,9 +9,11 @@ import { gate, isSafetyCase, type GateContext } from "./policy-gate.js";
 import { defaultClaudeCaller, Planner, type ClaudeCaller, type PlanResult } from "./planner.js";
 import { isDeviceStep, runDeviceStep } from "./runner.js";
 import { scheduleVisit } from "./scheduler.js";
+import { computeScorecard } from "./scorecard.js";
 import { loadSeed, type FleetSeed } from "./seed.js";
 import { verify, type Verdict } from "./verifier.js";
 import type {
+  FleetSource,
   ActionResult,
   CaseEvent,
   CaseStatus,
@@ -30,6 +32,8 @@ import type {
 
 export interface EngineOptions {
   runtimeDir: string;
+  /** Which fleet this engine runs on; echoed in state for the UI. */
+  fleetSource?: FleetSource;
   /** "auto" = Claude when ANTHROPIC_API_KEY is set, else playbook. */
   planner: "auto" | "playbook";
   seed?: FleetSeed;
@@ -47,6 +51,7 @@ export class DefaultResponseEngine implements ResponseEngine {
   private readonly store: CaseStore;
   private readonly seed: FleetSeed;
   private readonly clock: () => Date;
+  private readonly fleetSource?: FleetSource;
   private readonly planner: Planner;
   private readonly claude?: ClaudeCaller;
   private queue: Promise<unknown> = Promise.resolve();
@@ -58,6 +63,7 @@ export class DefaultResponseEngine implements ResponseEngine {
   ) {
     this.seed = options.seed ?? loadSeed();
     this.clock = options.clock ?? (() => new Date());
+    this.fleetSource = options.fleetSource;
     this.store = new CaseStore(options.runtimeDir, this.clock);
     const useClaude = options.planner === "auto" && !!process.env.ANTHROPIC_API_KEY;
     this.claude = useClaude ? (options.claudeCaller ?? defaultClaudeCaller()) : undefined;
@@ -78,6 +84,15 @@ export class DefaultResponseEngine implements ResponseEngine {
       users: [...this.seed.users, ...this.seed.drivers],
       metrics: this.metrics(),
       planner: this.planner.source,
+      fleet_source: this.fleetSource,
+      fw_allowlist: [...this.seed.fw_allowlist],
+      scorecard: computeScorecard(d.cases, d.visits, (vin) => {
+        try {
+          return this.gateway.getUnitState(vin).answer_key;
+        } catch {
+          return undefined;
+        }
+      }),
       mocked: true,
     };
   }

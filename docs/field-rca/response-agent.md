@@ -259,3 +259,17 @@ cp ../base-hackathon/.env .env
 Then start a Claude Code session in `../bh-<name>` and paste the prompt. `Dev/CLAUDE.md` and the repo's `AGENTS.md` load automatically.
 
 **Integration (after A, B, C finish):** merge `resp-sim`, `resp-engine`, `resp-ui` into `main`; wire `FleetSim` + the real engine into `routes.ts` in place of the mock; run `npm test`; walk scenes 1–6 in the browser; fix; update `AGENTS.md` Status.
+
+---
+
+## 16. Core telemetry pack fleet (added Sep 26, evening)
+
+The response agent now runs by default on the team's synthetic **Base Core telemetry pack** (`data_input/`, MOCKED). The 12-unit demo fleet is still available from the fleet dropdown on `/response`, or with `RESPONSE_FLEET=demo`.
+
+- **Fleet:** `src/sim/core-pack.ts` loads all 57 units from `packet_at_fault_time.csv` (48 Cores plus 9 detector fixtures) and joins `inventory.csv` for location and the answer key. Firmware allow-list: `fw_allowlist.json`, newest first (the OTA target).
+- **Diagnosis:** `src/response/detector-hypothesis.ts` runs the Task 1 detectors (`src/field-rca/detectors`, Megan) on each packet row. Evidence adds the rolled-up `events.csv` line and key packet readings (heatsink, fan RPM and current, IGBT A/B/C, cell spread, derate). The agent never reads the scenario label or the answer key. A planted fault falls back to the stub.
+- **Behavior:** `SCENARIOS` in `core-pack.ts` sets each scenario's true root cause and how it reacts to fixes. Missing fans get installed and stalled fans replaced on site, a blocked intake is cleared, a bad NTC sensor is replaced without pulling the stack, a hot garage clears under monitoring, a gateway recovers from a remote reboot, and IGBT failures and cell-temperature spread need HQ.
+- **Scorecard:** `src/response/scorecard.ts` grades resolved cases against `inventory.csv` (`recommended_action` → no truck / on site / pull, and `do_not_return_hardware`). It powers the **Answer-key check** panel and the per-case `key:` chips. Evaluation only.
+- **Result with every step approved (playbook planner, `core-pack.test.ts`):** 47 graded, 40 match, **0 wrong pulls**, 40/40 do-not-return units kept, 0 missed pulls, 7 extra trucks. All 7 trace to diagnosis: the detectors flag 5 false alarms as L0 safety, so the gate requires a person, and 2 gateway outages come back `unknown`, which blocks remote actions.
+- **Bug reports** now group only firmware-type causes (`fw_*`, `can_link_unreliable`). Install and thermal clusters on one build are fleet patterns, not firmware bugs.
+- With the Claude planner, ingest plans cases one at a time, so 47 cases fill in over a minute or two at startup.

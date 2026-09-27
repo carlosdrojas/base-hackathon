@@ -1,23 +1,50 @@
 // HTTP routes for the Response Agent (design doc §11). Mounted by dashboard-server.ts.
-// `engine` is the single swap point: replace the MockResponseEngine with the real engine at
-// integration and nothing else changes.
+// Two fleets: "core" = the team's synthetic Base Core telemetry pack (data_input/, diagnosed by the
+// Task 1 detectors) and "demo" = the hand-built 12-unit fleet (data/sim-fleet.seed.json, stub
+// diagnosis). Pick the startup fleet with RESPONSE_FLEET=core|demo; switch live via /reset.
 
 import "dotenv/config"; // ANTHROPIC_API_KEY switches the planner to Claude
 import type http from "node:http";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { DATA_INPUT_DIR, loadCorePack } from "../sim/core-pack.js";
 import { FleetSim } from "../sim/fleet-sim.js";
+import { DetectorHypothesisSource } from "./detector-hypothesis.js";
 import { DefaultResponseEngine } from "./engine.js";
 import { StubHypothesisSource } from "./hypothesis-source.js";
-import { loadSeed } from "./seed.js";
-import type { GateResult, PlantableFault, ResponseEngine, User, VisitOutcome } from "./types.js";
+import { loadSeed, type FleetSeed } from "./seed.js";
+import type { FleetSource, GateResult, PlantableFault, ResponseEngine, User, VisitOutcome } from "./types.js";
 
 const seed = loadSeed();
-const fleet = new FleetSim();
-export const engine: ResponseEngine = new DefaultResponseEngine(fleet, new StubHypothesisSource(fleet, seed.misdiagnose), {
-  runtimeDir: fileURLToPath(new URL("../../data/runtime", import.meta.url)),
-  planner: "auto",
-  seed,
-});
+const RUNTIME = fileURLToPath(new URL("../../data/runtime", import.meta.url));
+
+function build(source: FleetSource): ResponseEngine {
+  if (source === "demo") {
+    const fleet = new FleetSim({ runtimePath: join(RUNTIME, "demo", "sim-fleet.json") });
+    return new DefaultResponseEngine(fleet, new StubHypothesisSource(fleet, seed.misdiagnose), {
+      runtimeDir: join(RUNTIME, "demo"),
+      planner: "auto",
+      seed,
+      fleetSource: "demo",
+    });
+  }
+  const { units: _units, ...base } = seed;
+  const pack = loadCorePack(base);
+  const fleet = new FleetSim({ seed: pack.seed, runtimePath: join(RUNTIME, "core", "sim-fleet.json") });
+  const manifest = JSON.parse(readFileSync(join(DATA_INPUT_DIR, "fw_allowlist.json"), "utf8"));
+  const diagnosis = new DetectorHypothesisSource(pack.packets, pack.events, manifest, new StubHypothesisSource(fleet, {}), fleet);
+  return new DefaultResponseEngine(fleet, diagnosis, {
+    runtimeDir: join(RUNTIME, "core"),
+    planner: "auto",
+    seed: pack.seed as FleetSeed,
+    fleetSource: "core",
+  });
+}
+
+let source: FleetSource = process.env.RESPONSE_FLEET === "demo" ? "demo" : "core";
+/** The active engine. Reassigned when the UI switches fleets. */
+export let engine: ResponseEngine = build(source);
 
 const USERS: User[] = [...seed.users, ...seed.drivers];
 const TICK_MS = 2000;
@@ -126,10 +153,18 @@ export async function handleResponseRoutes(req: http.IncomingMessage, res: http.
         send(res, 200, { cases: await engine.ingestFaults() });
         return true;
       }
-      case "/api/response/reset":
+      case "/api/response/reset": {
+        const want = str(body, "fleet", true);
+        if (want && want !== "core" && want !== "demo") throw new HttpError(400, `unknown fleet "${want}"`);
+        if (want && want !== source) {
+          source = want as FleetSource;
+          engine = build(source);
+        }
         await engine.reset();
+        await engine.ingestFaults();
         send(res, 200, { ok: true });
         return true;
+      }
       default:
         throw new HttpError(404, `no route ${method} ${p}`);
     }

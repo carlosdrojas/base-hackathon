@@ -156,6 +156,14 @@ function clientMain(): void {
     const u = me();
     renderHeader(u);
     $("metrics").innerHTML = renderMetrics();
+    $("scorecard").innerHTML = renderScorecard();
+    $("scorecard").style.display = state.scorecard ? "block" : "none";
+    const core = state.fleet_source === "core";
+    $("fleetTitle").innerHTML = core
+      ? `Base Core telemetry pack <span style="font-weight:400;color:#8A8880;">&middot; ${state.fleet.length} synthetic units from data_input/ &middot; diagnosed by the Task 1 detectors</span>`
+      : `Demo fleet <span style="font-weight:400;color:#8A8880;">&middot; ${state.fleet.length} hand-built inverters &middot; ${esc((state.fw_allowlist ?? ALLOWLIST)[0])} is allow-listed</span>`;
+    const fs = $("fleetSel") as HTMLSelectElement;
+    if (fs && state.fleet_source && fs.value !== state.fleet_source) fs.value = state.fleet_source;
     $("fleet").innerHTML = renderFleet();
     const cases = [...state.cases].sort((a: any, b: any) => rank(a) - rank(b) || a.case_id.localeCompare(b.case_id));
     if (!selectedCase || !state.cases.some((c: any) => c.case_id === selectedCase)) selectedCase = cases[0]?.case_id ?? null;
@@ -186,6 +194,35 @@ function clientMain(): void {
       : chip("Planner: playbook", ["#EFEDE7", "#4A4944"]);
   }
 
+  function renderScorecard(): string {
+    const k = state.scorecard;
+    if (!k) return "";
+    const pct = (a: number, b: number) => (b ? `${a} / ${b}` : "–");
+    const tiles: [string, string, string, boolean][] = [
+      ["Matched answer key", pct(k.matched, k.graded), "Resolved cases whose outcome matches the pack's recommended_action class: no truck, fixed on site, or pulled to HQ.", false],
+      ["Hardware kept", pct(k.dnr_kept, k.dnr_resolved), "Resolved units marked do_not_return_hardware=Y that stayed in the field.", false],
+      ["Wrong pulls", String(k.wrong_pulls), "HQ pulls on units the key says not to return. North star: 0.", k.wrong_pulls > 0],
+      ["Missed pulls", String(k.missed_pulls), "Units the key says should come back to HQ that were resolved without a pull.", k.missed_pulls > 0],
+      ["Extra trucks", String(k.extra_trucks), "Tech visits on units the key says needed no truck. Each is traceable in the case timeline.", k.extra_trucks > 0],
+      ["Not resolved yet", String(k.pending), "Cases with an answer key still waiting on approvals or visits.", false],
+    ];
+    return `<div style="display:flex;align-items:baseline;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:10px;">
+        <div class="panelTitle">Answer-key check</div>
+        <div style="font-size:12px;color:#8A8880;">Graded against data_input/inventory.csv (recommended_action, do_not_return_hardware). Evaluation only: the agent never sees the key. MOCKED data.</div>
+      </div>
+      <div class="grid-score">${tiles.map(([label, v, tip, bad]) => `<div class="card" style="padding:12px 14px;box-shadow:none;">
+        <div class="kpiLabel">${esc(label)}<span class="tip" data-tip="${esc(tip)}">?</span></div>
+        <div style="font-size:24px;font-weight:600;margin-top:4px;${bad ? "color:#B42318;" : ""}">${esc(v)}</div>
+      </div>`).join("")}</div>`;
+  }
+
+  function keyChip(c: any): string {
+    const k = state.scorecard?.per_case?.[c.case_id];
+    if (!k) return "";
+    const [bg, fg, mark] = k.verdict === "match" ? ["#E7F2EA", "#1D6F3E", "✓"] : k.verdict === "miss" ? ["#FDECEC", "#B42318", "✗"] : ["#EFEDE7", "#6B6A64", "…"];
+    return `<span class="chip mono" title="${esc(k.note)}" style="background:${bg};color:${fg};font-size:11px;">key: ${esc(k.recommended_action)} ${mark}</span>`;
+  }
+
   function renderMetrics(): string {
     const m = state.metrics;
     const tiles: [string, number, string][] = [
@@ -214,13 +251,13 @@ function clientMain(): void {
   function renderFleet(): string {
     return state.fleet.map((d: any) => {
       const [bar, bg, label] = unitColor(d);
-      const stale = !ALLOWLIST.includes(d.fw_version);
+      const stale = !(state.fw_allowlist ?? ALLOWLIST).includes(d.fw_version);
       const menu = plantMenuVin === d.vin
         ? `<div class="menu">${PLANTABLE.map((f) => `<button class="menuItem mono" data-act="plant" data-vin="${esc(d.vin)}" data-fault="${f}">${esc(f)}</button>`).join("")}</div>`
         : "";
       return `<div class="unit" style="border-left:5px solid ${bar};">
         <div style="display:flex;justify-content:space-between;align-items:center;gap:6px;">
-          <span class="mono" style="font-size:14px;font-weight:500;">${esc(d.vin)}</span>
+          <span class="mono" style="font-size:13px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0;" title="${esc(d.vin)}">${esc(d.vin)}</span>
           <span class="chip" style="background:${bg};color:${bar};font-size:11px;">${esc(label)}</span>
         </div>
         <div class="mono" style="font-size:12px;color:${stale ? "#B42318" : "#6B6A64"};margin-top:6px;">fw ${esc(d.fw_version)}${stale ? " · stale" : ""}</div>
@@ -291,12 +328,13 @@ function clientMain(): void {
         <span class="mono" style="color:#4A4944;">${esc(c.vin)}</span>
         <span style="color:#6B6A64;font-size:14px;">${esc(c.site)}</span>
         <span style="flex:1;"></span>
+        ${keyChip(c)}
         ${gp ? levelChips(gp) : ""}
         ${chip(c.status, STATUS[c.status])}
       </div>
       ${h ? `<div style="font-size:14px;margin-top:6px;color:#4A4944;">
         <span class="mono">${esc(h.root_cause)}</span>
-        <span style="color:#8A8880;"> · ${Math.round(h.confidence * 100)}% · ${esc(h.source)} · fw ${esc(h.fw_version)}</span>
+        <span style="color:#8A8880;"> · ${Math.round(h.confidence * 100)}% · ${h.source === "task1" ? "Task 1 detectors" : esc(h.source)} · fw ${esc(h.fw_version)}</span>
         ${gp ? ` <span style="color:#8A8880;">· plan: ${esc(gp.source)}</span>` : ""}
         ${c.outcome ? ` · ${chip(pretty(c.outcome), ["#E7F2EA", "#1D6F3E"], "font-size:11px;")}` : ""}
       </div>` : ""}
@@ -481,7 +519,7 @@ function clientMain(): void {
         render();
         return;
       case "reset":
-        if (confirm("Reset the fake fleet and all cases to the seed?")) act("/api/response/reset", {}, "Reset to seed");
+        if (confirm("Reset the fleet and all cases to the seed?")) act("/api/response/reset", {}, "Reset to seed");
         return;
     }
   });
@@ -510,6 +548,16 @@ function clientMain(): void {
     if (ev.key === "Escape" && openReport) { openReport = null; render(); }
   });
 
+  ($("fleetSel") as HTMLSelectElement).addEventListener("change", (ev) => {
+    const want = (ev.target as HTMLSelectElement).value;
+    if (want === state?.fleet_source) return;
+    if (confirm(`Switch to the ${want === "core" ? "Core telemetry pack" : "demo fleet"}? This resets all cases.`)) {
+      act("/api/response/reset", { fleet: want }, want === "core" ? "Switched to the Core telemetry pack" : "Switched to the demo fleet");
+    } else {
+      (ev.target as HTMLSelectElement).value = state?.fleet_source ?? "core";
+    }
+  });
+
   refresh(true);
   setInterval(() => { if (!busy) refresh(); }, 2000);
 }
@@ -530,7 +578,9 @@ function tourMain(): void {
     { target: "#metrics", title: "The scoreboard",
       body: "Fixed remotely = solved with no truck. Avoided false pulls = a tech found nothing wrong, so no healthy unit went back to HQ. Gate denials = unsafe or unauthorized actions the rules blocked. Hover the ? on any tile for its definition." },
     { target: "#fleetCard", title: "The fleet",
-      body: "Each tile is one simulated inverter (MOCKED): green is healthy, red is faulted, dark red is a safety case. Stale firmware is flagged in red. Use Plant fault on a healthy unit to create a new incident live, and Reset to seed to start the demo over." },
+      body: "Each tile is one unit (MOCKED): green is healthy, red is faulted, dark red is a safety case. By default this is the team's Base Core telemetry pack, diagnosed by the Task 1 detectors; the dropdown switches to the 12-unit demo fleet. Plant fault creates a new incident live, and Reset to seed starts over." },
+    { target: "#scorecard", title: "Answer-key check",
+      body: "The telemetry pack says what should happen to each unit: no truck, fix on site, or pull to HQ, and whether the hardware must stay in the field. As cases resolve, this grades the agent against that key. The agent never sees it. Hover a case's key chip to see why it matched or missed." },
     { target: ".caseCard", title: "A case",
       body: "One card per incident, most urgent first. The top line shows the level of the step it's on now (\"now L2 · up to L4\") and its status. Below it: the diagnosis, how confident it is, and the plan, cheapest and safest step first. Click a card to open it on the right." },
     { target: ".caseCard [data-act=\"approve\"]", title: "Approve or reject a step",
@@ -542,7 +592,7 @@ function tourMain(): void {
     { target: "#bugsCard", title: "Engineer bug reports",
       body: "When several units on the same firmware fail the same way, the agent writes a report for engineers with the evidence and affected units. It recommends; it never patches." },
     { title: "Try it",
-      body: "As M. Alvarez (Ops), approve the reboot on INV-5003 and watch it clear with no truck sent. Then try INV-5008 as Ops and see the firmware update blocked as engineer-only. Replay this tour any time with the Tour button." },
+      body: "As M. Alvarez (Ops), approve a pending step and watch the agent run it, verify it, and escalate if it didn't work. Try a firmware update as Ops to see it blocked as engineer-only, then switch to J. Park. Replay this tour any time with the Tour button." },
   ];
 
   let i = 0;
@@ -695,6 +745,9 @@ export const RESPONSE_PAGE = `<!doctype html>
   .card { background: #FFFFFF; border: 1px solid #DEDAD2; border-radius: 8px; }
   .panelTitle { font-size: 14px; font-weight: 600; color: #4A4944; }
   .kpiLabel { font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; color: #6B6A64; white-space: nowrap; }
+  .grid-score { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 10px; }
+  @media (max-width: 1100px) { .grid-score { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+  @media (max-width: 560px) { .grid-score { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
   .chip { display: inline-block; font-size: 12px; font-weight: 600; padding: 2px 8px; border-radius: 4px; white-space: nowrap; }
   .btn { font-family: inherit; font-size: 13px; font-weight: 600; border-radius: 6px; padding: 5px 12px; cursor: pointer; border: 1px solid transparent; }
   .btn:disabled { cursor: not-allowed; opacity: 0.45; }
@@ -776,10 +829,18 @@ export const RESPONSE_PAGE = `<!doctype html>
 
     <div id="metrics" class="grid-metrics"></div>
 
+    <div id="scorecard" class="card" style="padding: 16px 18px; margin-bottom: 20px; display: none;"></div>
+
     <div id="fleetCard" class="card" style="padding: 16px 18px; margin-bottom: 20px;">
       <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px;">
-        <div class="panelTitle">Fake fleet <span style="font-weight: 400; color: #8A8880;">&middot; 12 simulated inverters &middot; 3.4.0 is allow-listed</span></div>
-        <button class="btn btnGhost" data-act="reset">Reset to seed</button>
+        <div id="fleetTitle" class="panelTitle">Fleet</div>
+        <div style="display: flex; align-items: center; gap: 8px;">
+          <select id="fleetSel" class="input" style="font-size: 13px;" title="Switch fleet (resets cases)">
+            <option value="core">Core telemetry pack</option>
+            <option value="demo">Demo fleet (12)</option>
+          </select>
+          <button class="btn btnGhost" data-act="reset">Reset to seed</button>
+        </div>
       </div>
       <div id="fleet" class="grid-fleet"></div>
     </div>

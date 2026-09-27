@@ -61,6 +61,8 @@ Commands: `npm install` · `npm run build` · `npm start` (MCP server) · `npm r
 
 - **Response Agent + Fake Fleet** (Carlos, `resp-integration`): `/response` page on the real engine. 12-unit simulated inverter fleet (`src/sim/`), response engine (`src/response/`): planner (Claude when `ANTHROPIC_API_KEY` is set, else playbook), deterministic policy gate, runner/verifier with escalation, tech scheduling with photo-gated visit completion, engineer bug reports, case timeline. `npm test`: 110 tests pass. Demo scenes 1–6 in `docs/field-rca/response-agent.md` §13 verified through the live API. All MOCKED.
 
+- **Response agent on the Core telemetry pack** (Carlos, branch `resp-telemetry`): `/response` defaults to the 57-unit `data_input/` fleet, diagnosed by the Task 1 detectors, with an answer-key scorecard (40/47 match, 0 wrong pulls when every step is approved). The demo fleet is still selectable. See `docs/field-rca/response-agent.md` §16.
+
 **In progress / not built**
 - Field RCA pipeline itself: CSV ingest, map, auto-created RCA tickets, model triage, live status updates. UI exists. Step 1 deterministic detectors are in `src/field-rca/detectors/` (`runDetectors`); the model agent is still unwired.
 - `core-fleet-telemetry.json` → `/case` and `/fleet` wiring.

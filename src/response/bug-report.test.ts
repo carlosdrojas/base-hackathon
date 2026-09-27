@@ -24,3 +24,12 @@ test("a case whose remote fix failed does not count (diagnosis is suspect)", () 
   const groups = findBugGroups([mkCase("1", "3.4.0", "done"), mkCase("2", "3.4.0", "failed"), mkCase("3", "3.4.0", "awaiting_approval")], []);
   assert.equal(groups.length, 0);
 });
+
+test("install / thermal clusters on one firmware are not firmware bug reports", () => {
+  const cases = ["1", "2", "3"].map((id) => {
+    const c = mkCase(id, "core-inv-3.4.17", "awaiting_approval");
+    c.hypothesis!.root_cause = "thermal_or_safety_event";
+    return c;
+  });
+  assert.equal(findBugGroups(cases, []).length, 0);
+});
