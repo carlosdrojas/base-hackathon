@@ -18,7 +18,7 @@ export function renderLoginPage(error: boolean): string {
       <span style="font-size: 15px; color: #6B6A64;">ARCA &mdash; Automatic Root Cause Analysis</span>
     </div>
     <div style="font-size: 20px; font-weight: 600; margin-bottom: 4px;">Log in</div>
-    <div style="font-size: 14px; color: #6B6A64; margin-bottom: 20px;">Demo accounts &mdash; staff / tech, password <span class="mono" style="font-family: monospace;">basehq2026</span></div>
+    <div style="font-size: 14px; color: #6B6A64; margin-bottom: 20px;">Demo accounts</div>
     ${error ? `<div style="background: #FDECEC; color: #B42318; font-size: 14px; padding: 10px 12px; border-radius: 6px; margin-bottom: 16px;">Incorrect username or password.</div>` : ""}
     <form method="POST" action="/login">
       <label style="display: block; font-size: 13px; font-weight: 600; color: #6B6A64; margin-bottom: 4px;">Username</label>

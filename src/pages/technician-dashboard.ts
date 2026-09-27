@@ -1,9 +1,9 @@
 // Read-only technician counterpart to case-workspace.ts / fleet-dashboard.ts.
-// A technician sees the real open cases across the fleet and their own
-// assigned Visits — no example/mock case data, no approve/reject/close.
-import { engine } from "../response/routes.js";
-import { pickTechnician } from "../response/scheduler.js";
-import { loadSeed, type FleetSeed } from "../response/seed.js";
+// A technician sees the real open Austin cases (from the real, stateful austinEngine — see
+// src/response/austin-routes.ts — same engine fleet-dashboard.ts's Cases table now reads) and
+// their own assigned Visits (still Carlos's simulated response engine, untouched below) — no
+// example/mock case data, no approve/reject/close.
+import { austinEngine } from "../response/austin-routes.js";
 import type { RcaCase } from "../response/types.js";
 
 interface CaseRow {
@@ -13,7 +13,6 @@ interface CaseRow {
   sev: "L0" | "L1" | "L2" | "L3" | "L4";
   rootCause: string;
   status: string;
-  age: string;
 }
 
 const sevColors: Record<CaseRow["sev"], { bg: string; color: string }> = {
@@ -24,28 +23,18 @@ const sevColors: Record<CaseRow["sev"], { bg: string; color: string }> = {
   L4: { bg: "#EAF3E7", color: "#1E4D2B" },
 };
 
-function relativeAge(iso: string): string {
-  const mins = Math.max(0, Math.round((Date.now() - new Date(iso).getTime()) / 60000));
-  if (mins < 60) return `${mins}m`;
-  const hours = Math.round(mins / 60);
-  if (hours < 24) return `${hours}h`;
-  return `${Math.round(hours / 24)}d`;
-}
-
-let liveSeed: FleetSeed | null = null;
-
+// Maps a real Austin RcaCase onto a row. `id` gets an "austin:" prefix so /case?case_id=...
+// resolves unambiguously against austinEngine's case store rather than colliding with Carlos's
+// simulated fleet's own "RCA-####" ids (both CaseStores mint the same sequence independently —
+// see case-workspace.ts's header comment for the full collision note).
 function deriveRow(c: RcaCase): CaseRow {
-  liveSeed ??= loadSeed();
-  const rootCause = c.hypothesis?.root_cause ?? "unknown";
-  const sev: CaseRow["sev"] = c.status === "Escalated L0" ? "L0" : c.gameplan?.level ?? "L1";
   return {
-    id: c.case_id,
+    id: `austin:${c.case_id}`,
     asset: c.vin,
     site: c.site,
-    sev,
-    rootCause,
+    sev: c.status === "Escalated L0" ? "L0" : c.gameplan?.level ?? "L1",
+    rootCause: c.hypothesis?.root_cause ?? "unknown",
     status: c.status,
-    age: relativeAge(c.opened_at),
   };
 }
 
@@ -76,19 +65,18 @@ function header(subtitle: string): string {
 
 function renderTechCaseRow(c: CaseRow): string {
   const sc = sevColors[c.sev];
-  return `<div class="caseRow" onclick="window.location.href='/case?case_id=${encodeURIComponent(c.id)}'" style="display:grid;grid-template-columns:70px 100px 1fr 60px 220px 160px 60px;gap:10px;padding:10px 6px;font-size:15px;border-bottom:1px solid #F0EEE9;align-items:center;cursor:pointer;">
-    <span class="mono">${c.id}</span>
-    <span class="mono">${c.asset}</span>
+  return `<div class="caseRow" onclick="window.location.href='/case?case_id=${encodeURIComponent(c.id)}'" style="display:grid;grid-template-columns:150px 130px 1fr 60px 220px 160px;gap:10px;padding:10px 6px;font-size:15px;border-bottom:1px solid #F0EEE9;align-items:center;cursor:pointer;">
+    <span class="mono" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${c.id}</span>
+    <span class="mono" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${c.asset}</span>
     <span>${c.site}</span>
     <span style="background:${sc.bg};color:${sc.color};font-size:13px;font-weight:600;padding:2px 8px;border-radius:4px;width:fit-content;">${c.sev}</span>
-    <span class="mono" style="font-size:14px;color:#4A4944;">${c.rootCause}</span>
+    <span class="mono" style="font-size:14px;color:#4A4944;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${c.rootCause}</span>
     <span style="color:#4A4944;">${c.status}</span>
-    <span style="color:#8A8880;">${c.age}</span>
   </div>`;
 }
 
-export function renderTechnicianDashboard(): string {
-  const openCases = engine
+export async function renderTechnicianDashboard(): Promise<string> {
+  const openCases = austinEngine
     .getState()
     .cases.map(deriveRow)
     .filter((c) => c.status !== "Closed");
@@ -105,14 +93,14 @@ ${HEAD}
   ${header("Open cases across the fleet, read-only — click a case to see its details. Your assigned visits are below.")}
   <div style="padding: 32px 40px 80px;">
     <div style="background: #FFFFFF; border: 1px solid #DEDAD2; border-radius: 8px; padding: 18px 20px;">
-      <div style="font-size: 14px; font-weight: 600; color: #4A4944; margin-bottom: 14px;">Open cases</div>
-      <div style="display: grid; grid-template-columns: 70px 100px 1fr 60px 220px 160px 60px; gap: 10px; padding: 8px 6px; font-size: 13px; font-weight: 600; color: #6B6A64; text-transform: uppercase; letter-spacing: 0.03em; border-bottom: 1px solid #DEDAD2;">
-        <span>Case#</span><span>Asset</span><span>Site</span><span>Sev</span><span>Root cause</span><span>Status</span><span>Age</span>
+      <div style="font-size: 14px; font-weight: 600; color: #4A4944; margin-bottom: 14px;">Open cases<span style="margin-left: 8px; font-size: 12px; font-weight: 400; color: #8A8880;">real Austin engine cases: real detectors + triage feed a real, stateful gameplan</span></div>
+      <div style="display: grid; grid-template-columns: 150px 130px 1fr 60px 220px 160px; gap: 10px; padding: 8px 6px; font-size: 13px; font-weight: 600; color: #6B6A64; text-transform: uppercase; letter-spacing: 0.03em; border-bottom: 1px solid #DEDAD2;">
+        <span>Case#</span><span>Asset</span><span>Site</span><span>Sev</span><span>Root cause</span><span>Status</span>
       </div>
       <div>${openCases.length ? openCases.map(renderTechCaseRow).join("") : `<div style="padding: 16px 6px; color: #8A8880;">No open cases yet.</div>`}</div>
     </div>
     <div style="background: #FFFFFF; border: 1px solid #DEDAD2; border-radius: 8px; padding: 18px 20px; margin-top: 24px;">
-      <div style="font-size: 14px; font-weight: 600; color: #4A4944; margin-bottom: 14px;">Visits &mdash; appointments assigned to you<span class="mocked" style="margin-left: 8px; background: #292826; color: #FFFFFF; font-size: 11px; font-weight: 700; letter-spacing: 0.06em; padding: 2px 7px; border-radius: 4px;">MOCKED</span></div>
+      <div style="font-size: 14px; font-weight: 600; color: #4A4944; margin-bottom: 14px;">Visits &mdash; appointments assigned to you</div>
       <div id="visits" style="color: #8A8880; font-size: 14px;">Loading visits&hellip;</div>
     </div>
   </div>

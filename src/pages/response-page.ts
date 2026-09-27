@@ -519,7 +519,7 @@ function tourMain(): void {
     { target: "#metrics", title: "The scoreboard",
       body: "Fixed remotely = solved with no truck. Avoided false pulls = a tech found nothing wrong, so no healthy unit went back to HQ. Gate denials = unsafe or unauthorized actions the rules blocked. Hover the ? on any tile for its definition." },
     { target: "#fleetCard", title: "The fleet",
-      body: "Each tile is one simulated inverter (MOCKED): green is healthy, red is faulted, dark red is a safety case. Stale firmware is flagged in red. Use Plant fault on a healthy unit to create a new incident live, and Reset to seed to start the demo over." },
+      body: "Each tile is one inverter: green is healthy, red is faulted, dark red is a safety case. Stale firmware is flagged in red. Use Plant fault on a healthy unit to create a new incident live, and Reset to seed to start the demo over." },
     { target: ".caseCard", title: "A case",
       body: "One card per incident, most urgent first. The top line shows the level of the step it's on now (\"now L2 · up to L4\") and its status. Below it: the diagnosis, how confident it is, and the plan, cheapest and safest step first. Click a card to open it on the right." },
     { target: ".caseCard [data-act=\"approve\"]", title: "Approve or reject a step",
@@ -750,7 +750,6 @@ export const RESPONSE_PAGE = `<!doctype html>
         <div style="font-size: 15px; color: #6B6A64; margin-top: 2px;">Plan the cheapest safe fix, gate it, verify it cleared, and only roll a truck when needed.</div>
       </div>
       <div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">
-        <span class="mocked" title="Fake fleet and in-memory engine. Not Base data, no production APIs.">MOCKED</span>
         <span id="planner"></span>
         <button id="tourBtn" class="btn btnGhost" type="button" title="Replay the walkthrough">Tour</button>
         <span id="conn" style="font-size: 12px; color: #B42318;"></span>

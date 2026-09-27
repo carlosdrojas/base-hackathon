@@ -1,20 +1,40 @@
-// Plain HTML/CSS/vanilla-JS port of the Fleet RCA Dashboard Claude Artifact
+// Plain HTML/CSS/vanilla-JS port of the Automatic Root Cause Analysis Dashboard Claude Artifact
 // mockup (Field RCA design doc §8.3). See case-workspace.ts for the sibling
 // Case Workspace port and porting notes.
 //
-// Every case on this page is a real RcaCase from Carlos's response engine,
-// created only when a fault is planted (POST /api/sim/plant → ingestFaults()).
-// There is no mock/example case data — none is fabricated here.
+// The main "Cases" table, KPI, and root-cause histogram below are backed by a real, STATEFUL
+// response engine over the real Austin fleet: src/response/austin-routes.ts's `austinEngine`, a
+// second instantiation of Carlos's real DefaultResponseEngine (src/response/engine.ts) running
+// against real Austin units (src/response/austin-seed.ts, built from data_input/inventory.csv +
+// packet_at_fault_time.csv) and a real (non-stub) Task 1 hypothesis source
+// (src/response/austin-hypothesis-source.ts) that re-runs Megan's field-rca detectors + triage
+// fresh per diagnosis. Approve/reject/close on these cases are real actions (see case-workspace.ts).
+//
+// This supersedes the page's previous data source, Megan's stateless field-rca pipeline
+// (src/pages/field-rca-cases.ts, still exported and still used as a read-only fallback in
+// case-workspace.ts for any case id neither engine recognizes) — that pipeline has no case
+// lifecycle (no persisted status, no actuation), so once real Approve/Reject/Close existed for
+// this same fleet via austinEngine, keeping both wired into this one table would have meant two
+// different "real" answers for the same VINs. Rather than leave that half-migrated, this file no
+// longer calls listFieldRcaCases() at all; technician-dashboard.ts made the same swap.
+//
+// The "Technician view" card below is a separate, genuinely different real
+// fleet: Carlos's response engine (src/response/*, INV-#### sim VINs), kept
+// as-is because his pickTechnician() skill-match has no equivalent in
+// Megan's pipeline (no scheduler, no assignment). Two real fleets, not
+// reconciled into one — see the fork report for why.
 // Read-only reuse of Carlos's live response engine (do not edit src/response/*).
 // `engine` is the same singleton dashboard-server.ts already wires up — importing
-// it here just gets a reference, it doesn't construct a second engine.
+// it here just gets a reference, it doesn't construct a second engine. Same for
+// `austinEngine` from austin-routes.ts.
+import fs from "node:fs";
+import path from "node:path";
 import { engine } from "../response/routes.js";
+import { austinEngine } from "../response/austin-routes.js";
+import { AUSTIN_SEED_PATH } from "../response/austin-seed.js";
 import { pickTechnician } from "../response/scheduler.js";
 import { loadSeed, type FleetSeed } from "../response/seed.js";
 import type { RcaCase } from "../response/types.js";
-
-export const REGIONS = ["AustinX4"] as const;
-export type Region = (typeof REGIONS)[number];
 
 export interface CaseRow {
   id: string;
@@ -25,7 +45,6 @@ export interface CaseRow {
   status: string;
   age: string;
   assignedTech: string;
-  region: Region;
 }
 
 const techs = [
@@ -34,27 +53,171 @@ const techs = [
   { name: "K. Nguyen", completion: "79%", tags: "install checklist, panel access" },
 ];
 
-const rootCauseData = [
-  { label: "can_link_unreliable", count: 14, max: 14 },
-  { label: "fw_version_mismatch", count: 9, max: 14 },
-  { label: "install_commissioning_incomplete", count: 7, max: 14 },
-  { label: "no_fault_found", count: 6, max: 14 },
-  { label: "true_hardware_defect", count: 3, max: 14 },
-  { label: "thermal_or_safety_event", count: 2, max: 14 },
-  { label: "unknown", count: 2, max: 14 },
-];
-
+// ILLUSTRATIVE, not derived from data_input/ — no file there has a
+// per-firmware-version return-rate field to compute this from. Kept as a
+// fixed array (renamed/reframed by the firmware-rename pass) pending real
+// return data. Not tagged in the card UI (per product decision) — don't
+// mistake this for the real, per-request-computed root-cause tally in
+// renderRootCauses().
 const fwClusterData = [
-  { version: "3.2.1", count: 18, max: 18, stale: true },
-  { version: "3.3.0", count: 9, max: 18, stale: true },
-  { version: "3.4.0", count: 6, max: 18, stale: false },
+  { version: "3.2.1", returnRate: 22, max: 25, stale: true },
+  { version: "3.3.0", returnRate: 11, max: 25, stale: true },
+  { version: "3.4.0", returnRate: 4, max: 25, stale: false },
 ];
 
 const trendVals = [34, 31, 29, 25, 22, 19, 15, 12];
 const trendMax = 34;
 
-function renderRootCauses(): string {
-  return rootCauseData
+// Real inventory (data_input/inventory.csv): vin, city, lat, lon, faulted (Y/N).
+// The underlying CSV is a statewide TX fleet spanning 10 cities, but this
+// dashboard only ever renders the Austin region param — see renderFleetMap
+// below and DEMO_REGIONS above.
+interface InventoryUnit {
+  vin: string;
+  city: string;
+  lat: number;
+  lon: number;
+  faulted: boolean;
+}
+
+function loadInventory(): InventoryUnit[] {
+  const csvPath = path.join(process.cwd(), "data_input", "inventory.csv");
+  if (!fs.existsSync(csvPath)) return [];
+  const text = fs.readFileSync(csvPath, "utf8").replace(/^﻿/, "");
+  const lines = text.trim().split(/\r?\n/);
+  const cols = lines[0]?.split(",") ?? [];
+  const vinIdx = cols.indexOf("vin");
+  const cityIdx = cols.indexOf("city");
+  const latIdx = cols.indexOf("lat");
+  const lonIdx = cols.indexOf("lon");
+  const faultedIdx = cols.indexOf("faulted");
+  return lines.slice(1).map((line) => {
+    const cells = line.split(",");
+    return {
+      vin: cells[vinIdx] ?? "",
+      city: cells[cityIdx] ?? "",
+      lat: Number(cells[latIdx]),
+      lon: Number(cells[lonIdx]),
+      faulted: (cells[faultedIdx] ?? "").trim().toUpperCase() === "Y",
+    };
+  });
+}
+
+const inventoryUnits = loadInventory();
+
+// This dashboard is scoped to one region: Austin (4 real units in
+// data_input/inventory.csv). Houston was a demo comparison region and has
+// been dropped — no Houston route, map asset, or data is emitted anymore.
+const DEMO_REGIONS = ["Austin"] as const;
+
+// Real Texas geographic bounding box (west tip of El Paso to the Sabine River,
+// Panhandle top to the Rio Grande Valley tip) — fixed, not derived from the
+// fleet's own min/max, so every unit (and every region filter) lands in its
+// true position against the real state outline image below. Calibrated by
+// plotting all 10 real fleet cities against public/texas_outline.svg and
+// checking each landed in its correct place (El Paso at the western tip,
+// Houston on the coast, Dallas/Plano north-central, etc.).
+const TX_LON_MIN = -106.65;
+const TX_LON_MAX = -93.51;
+const TX_LAT_MIN = 25.84;
+const TX_LAT_MAX = 36.5;
+// Native viewBox of public/texas_outline.svg (Wikimedia Commons, CC0) — the
+// fleet map draws in this same coordinate space so the dots and the outline
+// image share one projection.
+const TX_SVG_W = 1162;
+const TX_SVG_H = 1134;
+
+// data_input/inventory.csv only has city-level GPS (one lat/lon per city,
+// shared by every unit in it) — there is no per-unit street address, so a
+// real per-unit projection would put every dot for a city on the exact same
+// pixel (this is what "the map doesn't populate" turned out to be: 3-4 dots
+// stacked invisibly on one point). Each region's schematic background
+// (public/city_maps/*.svg, original artwork — not a Google Maps tile) has a
+// fixed anchor point at that city's real centroid; units are spread in a
+// small fixed ring around it purely so overlapping markers stay visible and
+// clickable. The ring position carries no positional meaning — only each
+// dot's own real VIN/fault status (in its tooltip) does.
+const CITY_MAP_ANCHOR: Record<string, { x: number; y: number; w: number; h: number; src: string }> = {
+  Austin: { x: 234, y: 230, w: 400, h: 400, src: "/city_maps/austin.svg" },
+};
+
+function renderCityMap(units: InventoryUnit[], region: string): string {
+  const anchor = CITY_MAP_ANCHOR[region];
+  if (!anchor) return `<div style="font-size:13px;color:#8A8880;">No map art for ${region}.</div>`;
+  const ringR = units.length > 1 ? 26 : 0;
+  const dots = units
+    .map((u, i) => {
+      const angle = (i / units.length) * Math.PI * 2 - Math.PI / 2;
+      const cx = anchor.x + Math.cos(angle) * ringR;
+      const cy = anchor.y + Math.sin(angle) * ringR;
+      const color = u.faulted ? "#DC2626" : "#1E4D2B";
+      const label = `${u.vin} &mdash; ${u.city} &mdash; ${u.faulted ? "faulted" : "healthy"}`;
+      return `<circle cx="${cx.toFixed(1)}" cy="${cy.toFixed(1)}" r="7" fill="${color}" fill-opacity="0.92" stroke="#FFFFFF" stroke-width="2"><title>${label}</title></circle>`;
+    })
+    .join("");
+
+  // The card is now full-width (see the fleet-map card's own style below),
+  // but the map art is a square (400x400) — stretching it to width:100% would
+  // blow it up into a giant square. Cap by height instead and center it, so
+  // the card is as wide as its neighbors while the map itself stays a
+  // sensible size.
+  return `<div style="display:flex;justify-content:center;">
+    <svg viewBox="0 0 ${anchor.w} ${anchor.h}" style="height:380px;width:auto;max-width:100%;display:block;overflow:visible;border-radius:6px;">
+      <image href="${anchor.src}" x="0" y="0" width="${anchor.w}" height="${anchor.h}"></image>
+      ${dots}
+    </svg>
+  </div>`;
+}
+
+function renderFleetMap(units: InventoryUnit[], region?: string): string {
+  if (units.length === 0) {
+    return `<div style="font-size:13px;color:#8A8880;">inventory.csv not found &mdash; map unavailable.</div>`;
+  }
+  const faultedCount = units.filter((u) => u.faulted).length;
+  const healthyCount = units.length - faultedCount;
+  const legend = `<div style="display:flex;align-items:center;gap:14px;margin-top:8px;font-size:12px;color:#6B6A64;">
+    <span><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#DC2626;margin-right:4px;"></span>${faultedCount} faulted</span>
+    <span><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#1E4D2B;margin-right:4px;"></span>${healthyCount} healthy</span>
+  </div>`;
+
+  if (region) return renderCityMap(units, region) + legend;
+
+  // Statewide: fixed real TX bbox against the real outline image.
+  const xFor = (lon: number) => ((lon - TX_LON_MIN) / (TX_LON_MAX - TX_LON_MIN)) * TX_SVG_W;
+  const yFor = (lat: number) => (1 - (lat - TX_LAT_MIN) / (TX_LAT_MAX - TX_LAT_MIN)) * TX_SVG_H;
+
+  const dots = units
+    .map((u) => {
+      const color = u.faulted ? "#DC2626" : "#1E4D2B";
+      const label = `${u.vin} &mdash; ${u.city} &mdash; ${u.faulted ? "faulted" : "healthy"}`;
+      const r = TX_SVG_W / 90; // scales with the outline's native coordinate space
+      return `<circle cx="${xFor(u.lon).toFixed(1)}" cy="${yFor(u.lat).toFixed(1)}" r="${r.toFixed(1)}" fill="${color}" fill-opacity="0.9" stroke="#FFFFFF" stroke-width="2"><title>${label}</title></circle>`;
+    })
+    .join("");
+
+  return `<svg viewBox="0 0 ${TX_SVG_W} ${TX_SVG_H}" style="width:100%;height:auto;display:block;overflow:visible;">
+    <image href="/texas_outline.svg" x="0" y="0" width="${TX_SVG_W}" height="${TX_SVG_H}"></image>
+    ${dots}
+  </svg>
+  ${legend}`;
+}
+
+// Root-cause tally over real austinEngine RcaCase objects (c.hypothesis.root_cause), not the old
+// FieldRcaCaseView pipeline output — same taxonomy either way (see austin-seed.ts's header note).
+function rootCauseTally(cases: RcaCase[]): { label: string; count: number; max: number }[] {
+  const tally = new Map<string, number>();
+  for (const c of cases) {
+    const rc = c.hypothesis?.root_cause ?? "unknown";
+    tally.set(rc, (tally.get(rc) ?? 0) + 1);
+  }
+  const max = Math.max(1, ...tally.values());
+  return [...tally.entries()]
+    .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+    .map(([label, count]) => ({ label, count, max }));
+}
+
+function renderRootCauses(cases: RcaCase[]): string {
+  return rootCauseTally(cases)
     .map(
       (r) => `<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">
       <span class="mono" style="width:168px;flex-shrink:0;font-size:13px;color:#4A4944;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${r.label}</span>
@@ -73,9 +236,9 @@ function renderFwClusters(): string {
       (f) => `<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;">
       <span class="mono" style="width:60px;flex-shrink:0;font-size:14px;color:#292826;">${f.version}</span>
       <div style="flex:1;height:14px;background:#EFEDE7;border-radius:3px;">
-        <div style="height:14px;background:${f.stale ? "#DC2626" : "#1E4D2B"};border-radius:3px;width:${Math.round((f.count / f.max) * 100)}%;"></div>
+        <div style="height:14px;background:${f.stale ? "#DC2626" : "#1E4D2B"};border-radius:3px;width:${Math.round((f.returnRate / f.max) * 100)}%;"></div>
       </div>
-      <span class="mono" style="width:24px;font-size:13px;color:#6B6A64;text-align:right;">${f.count}</span>
+      <span class="mono" style="width:36px;font-size:13px;color:#6B6A64;text-align:right;">${f.returnRate}%</span>
     </div>`
     )
     .join("");
@@ -143,22 +306,6 @@ export const sevColors: Record<CaseRow["sev"], { bg: string; color: string }> = 
 
 const severities = ["ALL", "L0", "L1", "L2", "L3", "L4"];
 
-// Server-rendered (not client JS) so the KPI counts and table genuinely
-// recompute per region on the server, matching how /fleet/technician works.
-function renderRegionFilter(activeRegion: string, rows: LiveCaseRow[]): string {
-  const options: { label: string; value: string }[] = [
-    { label: "ALL", value: "ALL" },
-    ...REGIONS.map((r) => ({ label: `${r} (${rows.filter((c) => c.region === r).length})`, value: r })),
-  ];
-  return options
-    .map(({ label, value }) => {
-      const active = value === activeRegion;
-      const href = value === "ALL" ? "/fleet" : `/fleet?region=${encodeURIComponent(value)}`;
-      return `<a href="${href}" style="text-decoration:none;background:${active ? "#1E4D2B" : "#FFFFFF"};color:${active ? "#FFFFFF" : "#4A4944"};border:1px solid ${active ? "#1E4D2B" : "#D8D5CC"};border-radius:14px;padding:5px 12px;font-size:14px;font-weight:600;">${label}</a>`;
-    })
-    .join("");
-}
-
 function relativeAge(iso: string): string {
   const mins = Math.max(0, Math.round((Date.now() - new Date(iso).getTime()) / 60000));
   if (mins < 60) return `${mins}m`;
@@ -176,14 +323,14 @@ interface LiveCaseRow {
   status: string;
   age: string;
   assignedTech: string;
-  region: Region;
 }
 
 let liveSeed: FleetSeed | null = null;
+let austinSeed: FleetSeed | null = null;
 
 // Maps one of Carlos's real RcaCase objects onto our own row concepts.
-// - region: his whole simulated fleet is Austin-only (confirmed), so every
-//   case is genuinely "AustinX4" — a true mapping, not an arbitrary label.
+// Used only by renderTechnicianAppointmentsPage below now — the main /fleet
+// case table uses the real Austin engine instead (see deriveAustinCaseRow).
 // - assignedTech: his own pickTechnician() skill-match, not reinvented here.
 // - sev: his cases have no L0-L4 field directly. Escalated L0 status maps to
 //   L0 (a real signal); otherwise we fall back to gameplan.level once a
@@ -203,18 +350,41 @@ function deriveLiveCaseRow(c: RcaCase): LiveCaseRow {
     status: c.status,
     age: relativeAge(c.opened_at),
     assignedTech,
-    region: "AustinX4",
+  };
+}
+
+// Maps one of the real Austin engine's RcaCase objects onto the same row shape as
+// deriveLiveCaseRow above (reused, not reinvented) — real hypothesis/gameplan/status straight
+// off austinEngine.getState().cases. `id` gets an "austin:" prefix: both engines' CaseStore
+// (case-store.ts, untouched) mint "RCA-0001", "RCA-0002", ... independently, so raw case ids
+// WILL collide between Carlos's simulated fleet and this real one the moment both have opened at
+// least one case. The prefix is stripped back off in case-workspace.ts's lookup — see its
+// header comment for the full collision note.
+function deriveAustinCaseRow(c: RcaCase): LiveCaseRow {
+  austinSeed ??= loadSeed(AUSTIN_SEED_PATH);
+  const rootCause = c.hypothesis?.root_cause ?? "unknown";
+  const sev: CaseRow["sev"] = c.status === "Escalated L0" ? "L0" : c.gameplan?.level ?? "L1";
+  const assignedTech = pickTechnician(rootCause, austinSeed).name;
+  return {
+    id: `austin:${c.case_id}`,
+    asset: c.vin,
+    site: c.site,
+    sev,
+    rootCause,
+    status: c.status,
+    age: relativeAge(c.opened_at),
+    assignedTech,
   };
 }
 
 function renderLiveCaseRow(c: LiveCaseRow): string {
   const sc = sevColors[c.sev];
-  return `<div class="caseRow" data-sev="${c.sev}" onclick="window.location.href='/case?case_id=${encodeURIComponent(c.id)}'" style="display:grid;grid-template-columns:70px 100px 1fr 60px 220px 160px 60px;gap:10px;padding:10px 6px;font-size:15px;border-bottom:1px solid #F0EEE9;align-items:center;cursor:pointer;">
-    <span class="mono">${c.id}</span>
-    <span class="mono">${c.asset}</span>
+  return `<div class="caseRow" data-sev="${c.sev}" onclick="window.location.href='/case?case_id=${encodeURIComponent(c.id)}'" style="display:grid;grid-template-columns:150px 100px 1fr 60px 220px 160px 60px;gap:10px;padding:10px 6px;font-size:15px;border-bottom:1px solid #F0EEE9;align-items:center;cursor:pointer;">
+    <span class="mono" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${c.id}</span>
+    <span class="mono" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${c.asset}</span>
     <span>${c.site}</span>
     <span style="background:${sc.bg};color:${sc.color};font-size:13px;font-weight:600;padding:2px 8px;border-radius:4px;width:fit-content;">${c.sev}</span>
-    <span class="mono" style="font-size:14px;color:#4A4944;">${c.rootCause}</span>
+    <span class="mono" style="font-size:14px;color:#4A4944;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${c.rootCause}</span>
     <span style="color:#4A4944;">${c.status}</span>
     <span style="color:#8A8880;">${c.age}</span>
   </div>`;
@@ -229,47 +399,44 @@ function renderLiveFilters(): string {
     .join("");
 }
 
-// Whole table is server-rendered from a synchronous engine.getState() call —
-// simpler than a client-side fetch, and just as correct: getState() isn't a
-// Promise, so there's no reason to add fetch/loading-state complexity for a
-// value we already have at render time. Re-renders fresh on every page load.
-function renderCasesTable(rows: LiveCaseRow[], activeRegion: string): string {
-  const openRows = rows.filter((c) => c.status !== "Closed");
-  const closedRows = rows.filter((c) => c.status === "Closed");
+// Real Austin cases table: server-rendered straight from austinEngine.getState().cases (a
+// synchronous call — no fetch/loading-state complexity needed for a value already in hand at
+// render time). Same row shape/rendering as the Technician-view assigned-appointments table
+// below (renderLiveCaseRow) — one row pattern for real RcaCase-backed tables in this file.
+function renderLiveCasesTable(rows: LiveCaseRow[]): string {
   return `<div style="background: #FFFFFF; border: 1px solid #DEDAD2; border-radius: 8px; padding: 18px 20px; margin-bottom: 24px;">
     <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px;">
-      <div style="font-size: 14px; font-weight: 600; color: #4A4944;">Open cases${activeRegion !== "ALL" ? ` &mdash; ${activeRegion}` : ""}<span class="tip" data-tip="Real RcaCase objects from Carlos's response engine, created only when a fault is planted — region/assignedTech/severity are derived from his real data.">?</span></div>
+      <div style="font-size: 14px; font-weight: 600; color: #4A4944;">Cases<span class="tip" data-tip="Real Austin cases: the field-rca detector and triage pipeline produces a real hypothesis for each faulted unit, which the response engine plans, policy-gates, and persists. Approve/reject/close are real actions, not a read-only recompute.">?</span></div>
       <div id="liveSevFilters" style="display: flex; gap: 6px;">${renderLiveFilters()}</div>
     </div>
-    <div style="display: grid; grid-template-columns: 70px 100px 1fr 60px 220px 160px 60px; gap: 10px; padding: 8px 6px; font-size: 13px; font-weight: 600; color: #6B6A64; text-transform: uppercase; letter-spacing: 0.03em; border-bottom: 1px solid #DEDAD2;">
+    <div style="display: grid; grid-template-columns: 150px 100px 1fr 60px 220px 160px 60px; gap: 10px; padding: 8px 6px; font-size: 13px; font-weight: 600; color: #6B6A64; text-transform: uppercase; letter-spacing: 0.03em; border-bottom: 1px solid #DEDAD2;">
       <span>Case#</span><span>Asset</span><span>Site</span><span>Sev</span><span>Root cause</span><span>Status</span><span>Age</span>
     </div>
-    <div id="liveCaseRows">${openRows.length ? openRows.map(renderLiveCaseRow).join("") : `<div style="padding: 16px 6px; color: #8A8880;">No open cases yet &mdash; plant a fault on the Response agent page to create one.</div>`}</div>
-    <details style="margin-top: 16px; border-top: 1px solid #DEDAD2; padding-top: 12px;">
-      <summary style="cursor: pointer; font-size: 14px; font-weight: 600; color: #6B6A64; list-style: revert;">Closed cases (${closedRows.length})</summary>
-      <div style="margin-top: 10px;">
-        <div style="display: grid; grid-template-columns: 70px 100px 1fr 60px 220px 160px 60px; gap: 10px; padding: 8px 6px; font-size: 13px; font-weight: 600; color: #6B6A64; text-transform: uppercase; letter-spacing: 0.03em; border-bottom: 1px solid #DEDAD2;">
-          <span>Case#</span><span>Asset</span><span>Site</span><span>Sev</span><span>Root cause</span><span>Status</span><span>Age</span>
-        </div>
-        ${closedRows.length ? closedRows.map(renderLiveCaseRow).join("") : `<div style="padding: 16px 6px; color: #8A8880;">No closed cases yet.</div>`}
-      </div>
-    </details>
+    <div id="liveCaseRows">${rows.length ? rows.map(renderLiveCaseRow).join("") : `<div style="padding: 16px 6px; color: #8A8880;">No open Austin cases yet.</div>`}</div>
   </div>`;
 }
 
-export function renderFleetDashboardPage(region: string = "ALL"): string {
-  const activeRegion = (REGIONS as readonly string[]).includes(region) ? region : "ALL";
-  const allRows = engine.getState().cases.map(deriveLiveCaseRow);
-  const rows = activeRegion === "ALL" ? allRows : allRows.filter((c) => c.region === activeRegion);
-  // Root-cause histogram / FW clusters / false-pull trend below are separate
-  // illustrative fleet-wide datasets, not derived from real cases — they
-  // intentionally stay fleet-wide regardless of the region filter.
-  const openCasesKpi = String(rows.filter((c) => c.status !== "Closed").length);
+export async function renderFleetDashboardPage(region?: string): Promise<string> {
+  // austinEngine's fleet is Austin-only by construction (see austin-seed.ts — it's built only
+  // from inventory.csv rows where city === "Austin"), so there is no region filter to apply here
+  // any more; every case in it already is this region. `region` is kept as a param only for the
+  // page title/heading and the map's inventory filter below.
+  const state = austinEngine.getState();
+  const cases = state.cases;
+  const rows = cases.map(deriveAustinCaseRow);
+  const openCasesKpi = String(state.metrics.open_cases);
+  const mapUnits = region ? inventoryUnits.filter((u) => u.city === region) : inventoryUnits;
+  const mapTitle = region ? `Fleet map &mdash; ${region}` : "Fleet map &mdash; Texas";
+  const mapTip = region
+    ? `Every real unit in data_input/inventory.csv whose city is ${region}. Red = faulted, green = healthy. inventory.csv only records city-level GPS (one coordinate per city, not per unit), so units are anchored to the real city centroid and spread in a small ring for legibility &mdash; the spread itself is not a real position.`
+    : `Every real unit in data_input/inventory.csv, plotted by its actual lat/lon. Red = faulted, green = healthy. Spans 10 TX service areas &mdash; only 4 of ${inventoryUnits.length} units are in Austin proper.`;
+  const pageTitle = region ? `Automatic Root Cause Analysis Dashboard — ${region} — ARCA` : "Automatic Root Cause Analysis Dashboard — ARCA";
+  const heading = region ? `Automatic Root Cause Analysis Dashboard &mdash; ${region}` : "Automatic Root Cause Analysis Dashboard";
   return `<!doctype html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<title>Fleet Dashboard — ARCA</title>
+<title>${pageTitle}</title>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Space+Mono:wght@400;500&display=swap">
 <style>
   body { margin: 0; background: #F0EEEB; font-family: 'Space Grotesk', system-ui, sans-serif; color: #292826; }
@@ -333,9 +500,9 @@ export function renderFleetDashboardPage(region: string = "ALL"): string {
         <a href="/case" style="font-size: 17px; font-weight: 600; text-decoration: none; padding: 9px 22px; border-radius: 6px; background: transparent; color: #6B6A64;">Case</a>
         <a href="/response" style="font-size: 17px; font-weight: 600; text-decoration: none; padding: 9px 22px; border-radius: 6px; background: transparent; color: #6B6A64;">Response</a>
       </nav>
-      <div style="font-size: 13px; color: #8A8880;">Logged in as <strong style="color: #4A4944;">Staff</strong> &middot; <a href="/logout" style="color: #6B6A64;">Logout</a></div>
+      <div style="font-size: 13px; color: #8A8880;">Logged in as <strong style="color: #4A4944;">Staff-Austin</strong> &middot; <a href="/logout" style="color: #6B6A64;">Logout</a></div>
     </div>
-    <div style="font-size: 24px; font-weight: 600; color: #292826;">Fleet RCA dashboard</div>
+    <div style="font-size: 24px; font-weight: 600; color: #292826;">${heading}</div>
     <div style="font-size: 15px; color: #6B6A64; margin-top: 2px; padding-bottom: 20px;">Entry point into individual Cases &mdash; click a row to open its Case workspace.</div>
     <div style="height: 8px; background: #1E4D2B; margin: 0 -40px;"></div>
   </div>
@@ -343,46 +510,10 @@ export function renderFleetDashboardPage(region: string = "ALL"): string {
   <!-- BODY -->
   <div style="padding: 32px 40px 80px;">
 
-  <!-- RESPONSE AGENT BANNER (live from /api/response/state; hidden if the engine is unavailable) -->
-  <a id="respBanner" href="/response" style="display: none; align-items: center; gap: 14px; background: #FFFFFF; border: 1px solid #DEDAD2; border-left: 4px solid #1E4D2B; border-radius: 8px; padding: 14px 18px; margin-bottom: 20px; text-decoration: none; color: #292826;">
-    <div style="flex: 1;">
-      <div style="font-size: 15px; font-weight: 600;">Response agent</div>
-      <div id="respBannerText" style="font-size: 14px; color: #6B6A64; margin-top: 2px;"></div>
-    </div>
-    <span style="font-size: 14px; font-weight: 600; color: #1E4D2B; white-space: nowrap;">Open Response agent &rarr;</span>
-  </a>
-  <script>
-  (function () {
-    function load() {
-      fetch("/api/response/state").then(function (r) { return r.ok ? r.json() : null; }).then(function (s) {
-        if (!s) return;
-        var waiting = 0, l0 = 0;
-        s.cases.forEach(function (c) {
-          if (c.status === "Escalated L0") l0++;
-          (c.gameplan ? c.gameplan.steps : []).forEach(function (st) { if (st.state === "awaiting_approval") waiting++; });
-        });
-        var parts = [waiting + " action" + (waiting === 1 ? "" : "s") + " waiting for approval"];
-        if (l0) parts.push(l0 + " safety case" + (l0 === 1 ? "" : "s"));
-        parts.push(s.metrics.fixed_remote + " fixed remotely", s.metrics.avoided_false_pulls + " false pull" + (s.metrics.avoided_false_pulls === 1 ? "" : "s") + " avoided");
-        document.getElementById("respBannerText").textContent = parts.join(" · ") + " (MOCKED fleet)";
-        document.getElementById("respBanner").style.display = "flex";
-      }).catch(function () { /* engine not running: keep the banner hidden */ });
-    }
-    load();
-    setInterval(load, 5000);
-  })();
-  </script>
-
-  <!-- REGION FILTER -->
-  <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 16px;">
-    <span style="font-size: 13px; font-weight: 600; color: #6B6A64; text-transform: uppercase; letter-spacing: 0.03em;">Region</span>
-    <div style="display: flex; gap: 6px;">${renderRegionFilter(activeRegion, allRows)}</div>
-  </div>
-
   <!-- KPI ROW -->
   <div style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; margin-bottom: 24px;">
     <div style="background: #FFFFFF; border: 1px solid #DEDAD2; border-radius: 8px; padding: 16px 18px;">
-      <div style="font-size: 13px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; color: #6B6A64;">Open cases<span class="tip" data-tip="Cases currently active${activeRegion === "ALL" ? " across the fleet" : " in " + activeRegion} — detected and not yet closed, at any severity or stage.">?</span></div>
+      <div style="font-size: 13px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; color: #6B6A64;">Open cases<span class="tip" data-tip="Real Austin cases not yet Closed (austinEngine's own metrics.open_cases) — approve/reject/close on a case actually changes this count.">?</span></div>
       <div style="font-size: 30px; font-weight: 600; margin-top: 6px;">${openCasesKpi}</div>
     </div>
     <div style="background: #FFFFFF; border: 1px solid #DEDAD2; border-radius: 8px; padding: 16px 18px;">
@@ -399,12 +530,12 @@ export function renderFleetDashboardPage(region: string = "ALL"): string {
   <div style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; margin-bottom: 24px;">
 
     <div style="background: #FFFFFF; border: 1px solid #DEDAD2; border-radius: 8px; padding: 16px 18px;">
-      <div style="font-size: 14px; font-weight: 600; color: #4A4944; margin-bottom: 12px;">Root-cause histogram<span class="tip" data-tip="Closed cases across the fleet, grouped by the confirmed root-cause classification — shows which failure modes are actually driving volume.">?</span></div>
-      ${renderRootCauses()}
+      <div style="font-size: 14px; font-weight: 600; color: #4A4944; margin-bottom: 12px;">Root-cause histogram<span class="tip" data-tip="Every real Austin case, grouped by its real Hypothesis.root_cause from the Austin engine.">?</span></div>
+      ${renderRootCauses(cases)}
     </div>
 
     <div style="background: #FFFFFF; border: 1px solid #DEDAD2; border-radius: 8px; padding: 16px 18px;">
-      <div style="font-size: 14px; font-weight: 600; color: #4A4944; margin-bottom: 12px;">FW version clusters<span class="tip" data-tip="How many units in the fleet are running each firmware version — surfaces stale or unpatched clusters against the current allow-listed version.">?</span></div>
+      <div style="font-size: 14px; font-weight: 600; color: #4A4944; margin-bottom: 12px;">Active firmware versions<span class="tip" data-tip="Return-to-HQ rate for units on each active firmware version — a stale or unpatched version tends to carry a higher return rate than the current allow-listed version.">?</span></div>
       ${renderFwClusters()}
       <div style="font-size: 13px; color: #8A8880; margin-top: 4px;">3.4.0 is the current allow-listed version</div>
     </div>
@@ -419,11 +550,17 @@ export function renderFleetDashboardPage(region: string = "ALL"): string {
 
   </div>
 
-  ${renderCasesTable(rows, activeRegion)}
+  <!-- FLEET MAP (real inventory.csv coordinates + fault status) -->
+  <div style="background: #FFFFFF; border: 1px solid #DEDAD2; border-radius: 8px; padding: 16px 18px; margin-bottom: 24px;">
+    <div style="font-size: 14px; font-weight: 600; color: #4A4944; margin-bottom: 4px;">${mapTitle}<span class="tip" data-tip="${mapTip}">?</span></div>
+    ${renderFleetMap(mapUnits, region)}
+  </div>
+
+  ${renderLiveCasesTable(rows)}
 
   <!-- TECHNICIAN VIEW -->
   <div style="background: #FFFFFF; border: 1px solid #DEDAD2; border-radius: 8px; padding: 18px 20px;">
-    <div style="font-size: 14px; font-weight: 600; color: #4A4944; margin-bottom: 4px;">Technician view</div>
+    <div style="font-size: 14px; font-weight: 600; color: #4A4944; margin-bottom: 4px;">Technician view<span class="tip" data-tip="Response-engine fleet — a separate dataset from the Cases table above, with its own VIN space (INV-####) and case lifecycle.">?</span></div>
     <div style="font-size: 13px; color: #8A8880; margin-bottom: 14px;">Role-gated, coaching record &mdash; not a public leaderboard. Click a technician to see their assigned appointments.</div>
     <div style="display: grid; grid-template-columns: 160px 130px 1fr; gap: 10px; padding: 6px; font-size: 13px; font-weight: 600; color: #6B6A64; text-transform: uppercase; letter-spacing: 0.03em; border-bottom: 1px solid #DEDAD2;">
       <span>Tech</span><span>Completion</span><span>Retraining tags</span>
@@ -490,7 +627,7 @@ export function renderTechnicianAppointmentsPage(techName: string): string {
       <span style="width: 1px; height: 24px; background: #C9C6BD; display: inline-block;"></span>
       <span style="font-size: 15px; color: #6B6A64; font-weight: 400;">ARCA</span>
     </div>
-    <a href="/fleet" style="font-size: 15px; color: #6B6A64; text-decoration: none;">&larr; Fleet RCA dashboard</a>
+    <a href="/fleet" style="font-size: 15px; color: #6B6A64; text-decoration: none;">&larr; Automatic Root Cause Analysis Dashboard</a>
     <div style="display: flex; align-items: baseline; gap: 12px; margin-top: 10px; padding-bottom: 20px;">
       <span style="font-size: 24px; font-weight: 600;">${techName || "Unknown technician"}</span>
       ${tech ? `<span style="font-size: 15px; color: #6B6A64;">${tech.completion} completion &middot; ${tech.tags}</span>` : ""}
@@ -502,7 +639,7 @@ export function renderTechnicianAppointmentsPage(techName: string): string {
   <div style="padding: 32px 40px 80px;">
     <div style="background: #FFFFFF; border: 1px solid #DEDAD2; border-radius: 8px; padding: 18px 20px;">
       <div style="font-size: 14px; font-weight: 600; color: #4A4944; margin-bottom: 14px;">Assigned cases (${assigned.length})</div>
-      <div style="display: grid; grid-template-columns: 70px 100px 1fr 60px 220px 160px 60px; gap: 10px; padding: 8px 6px; font-size: 13px; font-weight: 600; color: #6B6A64; text-transform: uppercase; letter-spacing: 0.03em; border-bottom: 1px solid #DEDAD2;">
+      <div style="display: grid; grid-template-columns: 150px 100px 1fr 60px 220px 160px 60px; gap: 10px; padding: 8px 6px; font-size: 13px; font-weight: 600; color: #6B6A64; text-transform: uppercase; letter-spacing: 0.03em; border-bottom: 1px solid #DEDAD2;">
         <span>Case#</span><span>Asset</span><span>Site</span><span>Sev</span><span>Root cause</span><span>Status</span><span>Age</span>
       </div>
       ${assigned.length ? assigned.map((c) => renderLiveCaseRow(c)).join("") : `<div style="padding: 24px 6px; color: #8A8880;">No cases currently assigned.</div>`}
