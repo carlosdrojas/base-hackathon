@@ -8,6 +8,10 @@ Built for **Track 1 — Open Grid Data** at the [Base Power & AITX Talent Hackat
 
 **Demo video:** [docs/demo/arca-demo.mp4](docs/demo/arca-demo.mp4)
 
+![ARCA response agent: a safety case where the policy gate denies the reboot and the agent escalates to a technician](docs/demo/response-page.png)
+
+*The `/response` page (Austin view): fleet tiles, the answer-key check, and a case where the gate blocks a remote reboot on a safety signature and the agent dispatches a tech instead.*
+
 ARCA (Automatic Root Cause Analysis) takes a faulted Base Core from "something's wrong" to "fixed, and proven fixed", and only rolls a truck or pulls hardware when it has to.
 
 ```
