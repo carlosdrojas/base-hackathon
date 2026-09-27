@@ -6,6 +6,8 @@ Built for **Track 1 — Open Grid Data** at the [Base Power & AITX Talent Hackat
 
 ## ARCA: how it fits together
 
+**Demo video:** [docs/demo/arca-demo.mp4](docs/demo/arca-demo.mp4)
+
 ARCA (Automatic Root Cause Analysis) takes a faulted Base Core from "something's wrong" to "fixed, and proven fixed", and only rolls a truck or pulls hardware when it has to.
 
 ```
