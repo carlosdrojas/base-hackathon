@@ -12,7 +12,8 @@
     "start": "node dist/index.js",
     "dev": "tsc --watch",
     "dashboard": "npm run build && node dist/dashboard-server.js",
-    "test": "tsc && node --test \"dist/**/*.test.js\""
+    "test": "tsc && node --test \"dist/**/*.test.js\"",
+    "report:faults": "tsc && node dist/field-rca/detectors/report-faulted.js"
   },
   "keywords": [
     "base",

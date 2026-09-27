@@ -1,0 +1,11 @@
+id: hold_unknown
+version: 1
+class: unknown
+max_level: L0
+action: request_log_dump
+photos_required: []
+checklist:
+  - Do not reboot, reflash, or pull the unit
+  - Collect a log dump for a person to read
+  - Hardware recovery waits until reboot and reseat have both failed
+alerts: [engineer, ops]

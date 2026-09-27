@@ -1,0 +1,18 @@
+{
+  "note": "MOCKED signed manifest for this synthetic fleet: every fw_rev on the original inventory rows. core-inv-3.3.0 is absent on purpose.",
+  "signedForAllRevs": [
+    "core-inv-3.4.10",
+    "core-inv-3.4.11",
+    "core-inv-3.4.12",
+    "core-inv-3.4.13",
+    "core-inv-3.4.14",
+    "core-inv-3.4.15",
+    "core-inv-3.4.16",
+    "core-inv-3.4.17",
+    "core-inv-3.4.18",
+    "core-inv-3.4.19",
+    "core-inv-3.4.20",
+    "core-inv-3.4.8",
+    "core-inv-3.4.9"
+  ]
+}

@@ -1,0 +1,12 @@
+id: commissioning_photos
+version: 1
+class: install_commissioning_incomplete
+max_level: L4
+action: dispatch_technician
+photos_required: [install_checklist, nameplate]
+checklist:
+  - Finish the open commissioning checklist
+  - Photograph the nameplate and the incomplete items
+  - Re-run the first-boot self-test
+  - Do not pull the unit for a missed checklist
+alerts: [tech, ops]

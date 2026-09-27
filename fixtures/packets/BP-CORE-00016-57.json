@@ -1,0 +1,5 @@
+{
+  "fault_code": "OVERTEMP",
+  "uptime_s": 900,
+  "l0_flags": ["overtemp"]
+}

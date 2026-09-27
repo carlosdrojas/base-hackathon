@@ -1,0 +1,12 @@
+id: reboot_wait_90s_retest
+version: 1
+class: fw_soft_fault_reboot_candidate
+max_level: L2
+action: reboot_firmware
+photos_required: []
+checklist:
+  - Confirm no L0 safety flag is present
+  - Capture CAN counters and the boot reason
+  - Reboot, wait 90s, then re-run the comms self-test
+  - Keep the unit in the field if the watchdog loop clears
+alerts: [ops]

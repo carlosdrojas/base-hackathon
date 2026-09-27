@@ -14,6 +14,7 @@ import {
   type PermissionLevel,
   type RootCauseClass,
 } from "./contracts.js";
+import { DETECTOR_IDS } from "./detectors/run.js";
 import type { FieldRcaHost } from "./ports.js";
 
 export {
@@ -50,10 +51,42 @@ export type {
 export type { FieldRcaHost, RawSlice } from "./ports.js";
 export { createTriagingAgent, FieldRcaNotReadyError } from "./agent.js";
 export type { TriagingAgent } from "./agent.js";
+export { evidenceFromDeviceStatus } from "./detectors/from-device-status.js";
+export { evidenceFromPacketRow } from "./detectors/from-packet.js";
+export { buildEvidencePack, logIdForPack, mergeEvidencePack, openEvidenceCase } from "./evidence-pack.js";
+export type { CanPack, CaseLog, EvidenceCase, EvidencePack } from "./evidence-pack.js";
+export { isPlaceholderKey, placeholderTriage, triageEvidencePack, PLACEHOLDER_API_KEY, XAI_MODEL } from "./triage-model.js";
+export type { TriageRun } from "./triage-model.js";
+export { parseTriageOutput, TriageOutputError, TRIAGE_JSON_SCHEMA } from "./triage-schema.js";
+export { gate, loadCatalog, minLevel, parseCatalog } from "./policy-gate.js";
+export type { CatalogAction, GateDetectors, GateProposal, GateResult } from "./policy-gate.js";
+export type { TriageOutput } from "./triage-schema.js";
+export type { DeviceStatusEvidenceInput } from "./detectors/from-device-status.js";
+export { fwIsSigned, signedVersionsFor } from "./detectors/evidence.js";
+export type {
+  BootEvidence,
+  CanEvidence,
+  CommissioningEvidence,
+  DetectorEvidence,
+  FwManifest,
+  GridEvidence,
+  PlaybookAttempts,
+  RailEvidence,
+  SafetyEvidence,
+  SenseEvidence,
+} from "./detectors/evidence.js";
+export { DETECTOR_IDS, DETECTOR_VERSION, PLAYBOOK_IDS, hypothesisFromDecision, runDetectors } from "./detectors/run.js";
+export { loadPlaybooks, playbookById, playbookForClass } from "./playbooks.js";
+export type { Playbook } from "./playbooks.js";
+export type { DetectorDecision, DetectorFinding, DetectorId, DetectorRun, PlaybookId } from "./detectors/run.js";
 
 export interface FieldRcaDescriptor {
   module: "field-rca";
+  /** Model-backed debug and gameplan are not wired. */
   ready: false;
+  /** Comparison detectors from step 1. */
+  detectorsReady: true;
+  detectorIds: readonly string[];
   jobs: readonly ["debug", "gameplan"];
   rootCauseClasses: readonly RootCauseClass[];
   actionIds: readonly ActionId[];
@@ -73,6 +106,8 @@ export function createFieldRcaWorkspace(host?: FieldRcaHost): FieldRcaWorkspace 
     describe: () => ({
       module: "field-rca",
       ready: false,
+      detectorsReady: true,
+      detectorIds: DETECTOR_IDS,
       jobs: ["debug", "gameplan"],
       rootCauseClasses: ROOT_CAUSE_CLASSES,
       actionIds: ACTION_IDS,
