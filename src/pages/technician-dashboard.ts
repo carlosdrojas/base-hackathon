@@ -81,12 +81,10 @@ function renderTechCaseRow(c: CaseRow): string {
 }
 
 export async function renderTechnicianDashboard(): Promise<string> {
-  // The technician account covers the Austin service area: same one engine, filtered to Austin.
-  const openCases = austinEngine
-    .getState()
-    .cases.filter((c) => c.site.startsWith("Austin,"))
-    .map(deriveRow)
-    .filter((c) => c.status !== "Closed");
+  // The technician account covers the Austin service area: the one engine, filtered to Austin.
+  const allCases = austinEngine.getState().cases.filter((c) => c.site.startsWith("Austin,")).map(deriveRow);
+  const openCases = allCases.filter((c) => c.status !== "Closed");
+  const completedCases = allCases.filter((c) => c.status === "Closed");
 
   return `<!doctype html>
 <html lang="en">
@@ -109,6 +107,13 @@ ${HEAD}
     <div id="visitsCard" style="background: #FFFFFF; border: 1px solid #DEDAD2; border-radius: 8px; padding: 18px 20px; margin-top: 24px;">
       <div style="font-size: 14px; font-weight: 600; color: #4A4944; margin-bottom: 14px;">Visits &mdash; appointments assigned to you</div>
       <div id="visits" style="color: #8A8880; font-size: 14px;">Loading visits&hellip;</div>
+    </div>
+    <div id="completedCard" style="background: #FFFFFF; border: 1px solid #DEDAD2; border-radius: 8px; padding: 18px 20px; margin-top: 24px;">
+      <div style="font-size: 14px; font-weight: 600; color: #4A4944; margin-bottom: 14px;">Completed cases<span style="margin-left: 8px; font-size: 12px; font-weight: 400; color: #8A8880;">closed real Austin engine cases</span></div>
+      <div style="display: grid; grid-template-columns: 150px 130px 1fr 60px 220px 160px; gap: 10px; padding: 8px 6px; font-size: 13px; font-weight: 600; color: #6B6A64; text-transform: uppercase; letter-spacing: 0.03em; border-bottom: 1px solid #DEDAD2;">
+        <span>Case#</span><span>Asset</span><span>Site</span><span>Sev</span><span>Root cause</span><span>Status</span>
+      </div>
+      <div>${completedCases.length ? completedCases.map(renderTechCaseRow).join("") : `<div style="padding: 16px 6px; color: #8A8880;">No completed cases yet.</div>`}</div>
     </div>
   </div>
 </div>

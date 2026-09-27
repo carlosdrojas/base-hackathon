@@ -8,8 +8,11 @@ import type { IncomingMessage } from "node:http";
 
 export type Role = "staff" | "technician";
 
+// Username signals which region a staff account belongs to (only Austin exists today, but the
+// naming leaves room for other regions' staff to log into their own scope later) — role stays
+// the generic "staff" internally, this is just the login identity.
 const ACCOUNTS: Record<string, { password: string; role: Role }> = {
-  staff: { password: "basehq2026", role: "staff" },
+  staffAustin: { password: "basehq2026", role: "staff" },
   tech: { password: "basehq2026", role: "technician" },
 };
 

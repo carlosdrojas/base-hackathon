@@ -25,7 +25,7 @@ data_input/ telemetry pack ──► Task 1 detectors ──► Response engine 
 | Response engine, planner (Claude or playbook), policy gate, verifier, scheduler, fleet sim, scorecard, `/response` | `src/response/`, `src/sim/`, `src/pages/response-page.ts` | Carlos |
 | Login and roles, `/fleet`, `/case`, `/technician`, dashboard server | `src/pages/`, `src/session-store.ts`, `src/dashboard-server.ts` | Maria |
 
-Run it: `npm install && npm run dashboard`, open http://localhost:4173 and log in as `staff` / `basehq2026` (or `tech` / `basehq2026`). Add `ANTHROPIC_API_KEY` to `.env` to switch the planner from the playbook to Claude.
+Run it: `npm install && npm run dashboard`, open http://localhost:4173 and log in as `staffAustin` / `basehq2026` (or `tech` / `basehq2026`). Add `ANTHROPIC_API_KEY` to `.env` to switch the planner from the playbook to Claude.
 
 **Known duplication (next steps):** there are two policy gates and playbooks. `src/response/` enforces approvals while fixes run; `src/field-rca/` recommends an action from a diagnosis. Merge them and align the action names. `/api/response-austin/*` and `austin:` case links are kept only as aliases. The 12-unit demo fleet (`data/sim-fleet.seed.json`) and the 9 detector fixtures remain in tests only.
 
