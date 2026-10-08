@@ -6,7 +6,9 @@ Built in 48 hours by a team of three at the **Base Power × AITX Talent Hackatho
 
 **Live demo:** [arca-demo.onrender.com](https://arca-demo.onrender.com) (one-click demo login; the free host may take ~30 s to wake up) · **Video:** [docs/demo/arca-demo.mp4](docs/demo/arca-demo.mp4)
 
-![ARCA response agent: the policy gate denies a remote reboot on a safety case and the agent dispatches a technician instead](docs/demo/response-page.png)
+![ARCA response agent: on a safety case the policy gate has denied a remote reboot; approving the next step dispatches a technician and the visit lands on the case timeline](docs/demo/arca-gate.gif)
+
+*A thermal safety case in Austin: the gate denied the remote reboot (L0, no remote actuation), so the agent's next step is a technician. One approval schedules the visit, and every decision lands on the case timeline.*
 
 > Hackathon project, not a Base product. All fleet data is a synthetic telemetry pack shaped like Base's hardware. Device actions run against a simulator, not real batteries.
 
