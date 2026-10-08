@@ -1,0 +1,13 @@
+# One-click deploy of the ARCA dashboard on Render (free web service).
+# Runs on the synthetic data_input/ pack; no ERCOT or Anthropic keys needed.
+services:
+  - type: web
+    name: arca-demo
+    runtime: node
+    plan: free
+    buildCommand: npm ci && npm run build
+    startCommand: node dist/dashboard-server.js
+    healthCheckPath: /login
+    envVars:
+      - key: NODE_VERSION
+        value: "22"

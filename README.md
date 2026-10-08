@@ -1,114 +1,101 @@
-# ercot-mcp
+# ARCA: Automatic Root Cause Analysis for a home-battery fleet
 
-An MCP (Model Context Protocol) server that gives an LLM agent tools to pull live and historical data from [ERCOT's Public API](https://developer.ercot.com/) — prices, load, generation, congestion, outages, and more.
+ARCA takes a faulted home battery from "something's wrong" to "fixed, and proven fixed". It tries the cheapest safe fix first, checks whether that fix worked, and only sends a technician or pulls hardware when it has to.
 
-Built for **Track 1 — Open Grid Data** at the [Base Power & AITX Talent Hackathon](https://common-scooter-829.notion.site/Base-AITX-Talent-Hackathon-3e01e636288e80a7b914c993f90ae6c5).
+Built in 48 hours by a team of three at the **Base Power × AITX Talent Hackathon** (Austin, Sep 2026). Base engineers judged it.
 
-## ARCA: how it fits together
+**Live demo:** _LIVE_URL_ (one-click demo login, no signup) · **Video:** [docs/demo/arca-demo.mp4](docs/demo/arca-demo.mp4)
 
-**Demo video:** [docs/demo/arca-demo.mp4](docs/demo/arca-demo.mp4)
+![ARCA response agent: the policy gate denies a remote reboot on a safety case and the agent dispatches a technician instead](docs/demo/response-page.png)
 
-![ARCA response agent: a safety case where the policy gate denies the reboot and the agent escalates to a technician](docs/demo/response-page.png)
+> Hackathon project, not a Base product. All fleet data is a synthetic telemetry pack shaped like Base's hardware. Device actions run against a simulator, not real batteries.
 
-*The `/response` page (Austin view): fleet tiles, the answer-key check, and a case where the gate blocks a remote reboot on a safety signature and the agent dispatches a tech instead.*
+## The problem
 
-ARCA (Automatic Root Cause Analysis) takes a faulted Base Core from "something's wrong" to "fixed, and proven fixed", and only rolls a truck or pulls hardware when it has to.
+A distributed battery fleet throws off a constant stream of faults. Most are cheap to fix remotely, a few are dangerous, and some are false alarms. If every fault gets a truck roll, you waste money and pull healthy hardware. If faults get ignored, the dangerous ones get worse. The goal: **don't pull a healthy unit, and never "try one more thing" on a unit that's unsafe.**
+
+## How it works
 
 ```
-data_input/ telemetry pack ──► Task 1 detectors ──► Response engine ──► pages
- (48 Cores, events, packets)    (diagnosis)          (plan → policy gate → approve
-                                                      → run → verify → escalate)
+telemetry pack ──► detectors ──► planner ──► policy gate ──► approve ──► run ──► verify
+(48 Cores, events,  (root cause,   (Claude or    (deterministic   (role-based   (sim)   (re-read device:
+ packets at fault)   confidence)    playbook)     code, not LLM)   buttons)              cleared? escalate?)
+                                                                                           │
+                                         tech visit (checklist, photos) ◄── dispatch ◄─────┘
 ```
 
-- **One fleet:** the 48 real inventory Cores in `data_input/` (synthetic, shaped like Base's hardware). Austin / All Texas is a view filter, not a separate fleet.
-- **One engine:** `src/response/routes.ts` builds a single `DefaultResponseEngine`. `/fleet`, `/case`, `/technician` and `/response` all read it, so a case number means the same case everywhere.
-- **One diagnosis:** the Task 1 detectors (`src/field-rca/detectors`) run on each unit's packet (`src/response/detector-hypothesis.ts`).
-- **Scoring:** `/response` grades outcomes against the pack's answer key (`inventory.csv` `recommended_action`, `do_not_return_hardware`). The agent never sees the key.
+1. **Detect.** Deterministic detectors read each unit's telemetry packet and classify the fault into a closed set of root causes (firmware soft fault, version mismatch, CAN link, install or wiring error, thermal or safety event, hardware defect, and so on), each with a confidence score.
+2. **Plan.** The planner proposes a gameplan built only from a fixed action catalog (monitor, log dump, reboot, OTA to an allow-listed firmware, dispatch a tech, HQ recovery), cheapest and safest first. When `ANTHROPIC_API_KEY` is set it uses Claude tool use with a schema that can't express actions outside the catalog. Otherwise it falls back to a playbook.
+3. **Gate.** A deterministic policy gate, not the model, decides whether each step can run and who has to approve it:
+   - Safety (L0) cases get **no remote actuation**. The simulator refuses too, as a second layer of defense.
+   - Only an engineer can approve an OTA, and only to an allow-listed version.
+   - HQ recovery needs two different people (ops and engineering), plus on-site confirmation first.
+   - Unknown or low-confidence diagnoses block remote actions.
+4. **Run and verify.** Approved actions go to the fleet simulator, and then the verifier reads the device status again. If the fault cleared, the case goes to an engineer to close. If it didn't, the next step runs or the case escalates and gets re-planned.
+5. **Dispatch.** Physical work is scheduled to a named technician with a slot, a brief, and a checklist. Some visits require photos before they can be marked complete.
+6. **Audit.** Every diagnosis, gate decision, approval, and outcome lands on the case timeline. When three or more units on the same firmware fail the same way, the agent drafts an engineer bug report.
 
-| Area | Code | Built by |
-|---|---|---|
-| Telemetry pack, detectors, triage, field-rca contracts | `data_input/`, `src/field-rca/` | Megan |
-| Response engine, planner (Claude or playbook), policy gate, verifier, scheduler, fleet sim, scorecard, `/response` | `src/response/`, `src/sim/`, `src/pages/response-page.ts` | Carlos |
-| Login and roles, `/fleet`, `/case`, `/technician`, dashboard server | `src/pages/`, `src/session-store.ts`, `src/dashboard-server.ts` | Maria |
+## Results
 
-Run it: `npm install && npm run dashboard`, open http://localhost:4173 and log in as `staffAustin` / `basehq2026` (or `tech` / `basehq2026`). Add `ANTHROPIC_API_KEY` to `.env` to switch the planner from the playbook to Claude.
+The telemetry pack includes an answer key (the recommended action per unit). The agent never sees it. With every step approved, the end-to-end test grades the outcomes against it (`src/response/core-pack.test.ts`):
 
-**Known duplication (next steps):** there are two policy gates and playbooks. `src/response/` enforces approvals while fixes run; `src/field-rca/` recommends an action from a diagnosis. Merge them and align the action names. `/api/response-austin/*` and `austin:` case links are kept only as aliases. The 12-unit demo fleet (`data/sim-fleet.seed.json`) and the 9 detector fixtures remain in tests only.
+| Metric | Result |
+|---|---|
+| Cases graded | 47 |
+| Outcome matches answer key | 40 |
+| Wrong hardware pulls | **0** |
+| Missed pulls | 0 |
+| "Do not return" units kept in the field | 40 / 40 |
+| Extra truck rolls | 7 |
 
-The ERCOT MCP server below is the team's earlier grid-data tool.
+All 7 extra truck rolls trace back to diagnosis, and the gate behaved as designed in each one. Five false alarms were flagged as safety events, so the gate required a person on site. Two gateway outages came back as `unknown`, which blocks remote actions.
 
+## Try it
 
-## 1. Register for an ERCOT Public API key (one-time, manual)
+**Hosted:** open the live demo and click **Ops staff view** or **Technician view**.
 
-ERCOT requires email verification, so this step has to be done by a human in a browser — it can't be scripted.
-
-1. Go to the [ERCOT API Explorer](https://apiexplorer.ercot.com/) and click **Sign In/Sign Up**.
-2. Enter your email, retrieve the verification code from your inbox, and enter it.
-3. Set a password and your name to finish creating the account.
-4. Once signed in, go to **Products** in the top nav, select **Public API**, give the subscription a name (e.g. `Public API`), and click **Subscribe**.
-5. On your **Profile** page, click **Show** next to the new subscription and copy the **Primary key** — this is your `ERCOT_SUBSCRIPTION_KEY`.
-
-Full details: [Registration and Authentication docs](https://developer.ercot.com/applications/pubapi/user-guide/registration-and-authentication/).
-
-## 2. Configure credentials
+**Locally** (Node 20+, no API keys needed):
 
 ```bash
 npm install
-cp .env.example .env
+npm run dashboard        # http://localhost:4173
+npm test                 # 147 tests
 ```
 
-Fill in `.env`:
+Suggested walkthrough: on `/response`, open a safety case and see the reboot denied with its reason. Then approve a dispatch step, log in as the technician, complete the visit, and watch the case close. **Reset to seed** puts everything back.
 
-```
-ERCOT_USERNAME=you@example.com          # the email you registered with
-ERCOT_PASSWORD=your-account-password
-ERCOT_SUBSCRIPTION_KEY=your-primary-key
-```
+Optional: add `ANTHROPIC_API_KEY` to `.env` to switch the planner from the playbook to Claude.
 
-The server exchanges your username/password for a short-lived (1 hour) ID token on demand and caches it in memory — there's no separate "API key" beyond the subscription key plus your account credentials.
+## Team and my role
 
-## 3. Build and run
+| Area | Code | Built by |
+|---|---|---|
+| Response engine: planner, policy gate, runner and verifier, escalation, scheduler, bug reports, fleet simulator, answer-key scorecard, `/response` page | `src/response/`, `src/sim/`, `src/pages/response-page.ts` | **Carlos Rojas** |
+| Telemetry pack, detectors, triage, field-RCA contracts | `data_input/`, `src/field-rca/` | Megan Zhong |
+| Login and roles, `/fleet`, `/case`, `/technician`, dashboard server | `src/pages/`, `src/session-store.ts`, `src/dashboard-server.ts` | Maria Cruz |
 
-```bash
-npm run build
-npm start
-```
+Design doc for my part: [docs/field-rca/response-agent.md](docs/field-rca/response-agent.md).
 
-This runs the MCP server over stdio.
+## Design decisions
 
-## 4. Connect it to Claude Code / Claude Desktop
+- **The gate is code, not the model.** An LLM can propose, but ~130 lines of deterministic, tested TypeScript (`src/response/policy-gate.ts`) decide what's allowed. The engine also re-derives each step's level and required approvals from the catalog, ignoring anything the model claims.
+- **The AI never writes firmware.** OTA can only target versions on an allow-list.
+- **Defense in depth on safety.** The gate denies remote actions on L0 cases, and the simulator independently refuses them.
+- **No framework.** A plain `node:http` server and server-rendered pages, so the whole system reads top to bottom.
 
-Add to your MCP config (e.g. `.mcp.json` in this repo, or Claude Desktop's config):
+## Stack
 
-```json
-{
-  "mcpServers": {
-    "ercot": {
-      "command": "node",
-      "args": ["/absolute/path/to/base-hackathon/dist/index.js"],
-      "env": {
-        "ERCOT_USERNAME": "you@example.com",
-        "ERCOT_PASSWORD": "your-account-password",
-        "ERCOT_SUBSCRIPTION_KEY": "your-primary-key"
-      }
-    }
-  }
-}
-```
+TypeScript on Node · plain `node:http` · Anthropic SDK (optional planner) · `node:test` (147 tests) · no database: case state is persisted to JSON files.
 
-## Tools
+## Also in this repo
 
-| Tool | Purpose |
-|---|---|
-| `list_products` | List ERCOT EMIL products (report categories) with pagination and name search |
-| `get_product` | Get one product's metadata and its report endpoints, by `emilId` |
-| `get_report_data` | Fetch actual data rows from a report artifact, with arbitrary query params (date filters, paging) |
-| `get_archive` | List historical archive files for a product beyond the live report window |
-| `raw_get` | Escape hatch: authenticated GET against any ERCOT Public API URL/path |
+- [`ercot-mcp`](docs/ercot-mcp.md): an MCP server that exposes the ERCOT Public API (Texas grid prices, load, generation) as LLM tools. The team's earlier grid-data tool.
+- [`docs/hackathon/`](docs/hackathon/): the original submission write-up, demo script, and team notes.
 
-Typical flow: `list_products` (search e.g. "LMP" or "load") → `get_product` for the `emilId` you want → `get_report_data` with that product's report path segment and any date filters.
+## Known limitations
 
-## Notes
+- Device actuation is simulated. There's no real hardware behind the reboot and OTA buttons.
+- There are two policy-gate and playbook implementations (`src/response/` enforces approvals at run time, and `src/field-rca/` recommends from a diagnosis). They should be merged.
+- Auth is two hard-coded demo accounts with in-memory sessions. All visitors to the hosted demo share one fleet state.
 
-- ERCOT's `Coming Soon` docs mean per-report query parameters (date filters, etc.) aren't uniformly documented — `get_product` returns each report's endpoint URL, and `get_report_data`/`raw_get` pass through any query params you give them.
-- Report and data field names vary per EMIL product; ERCOT's [data product catalog](https://www.ercot.com/mp/data-products) is useful for figuring out what a given `emilId` contains.
+License: MIT, as declared in `package.json`.

@@ -1,5 +1,5 @@
 Before starting, read ../HACKATHON.md and skim ../base-hackathon-research/ (plus ../base-hackathon-ideas.md).
-For Field RCA work, also read `ProjectContext.md` (Megan's Notion index, which is the source of truth for that product).
+For Field RCA work, also read `docs/hackathon/PROJECT_CONTEXT.md` (Megan's Notion index, which is the source of truth for that product).
 
 # base-hackathon: ercot-mcp + Issue Router
 
@@ -7,9 +7,9 @@ For Field RCA work, also read `ProjectContext.md` (Megan's Notion index, which i
 
 ## Idea and pitch
 **Issue Router:** independent detector agents watch live ERCOT public data, plus a mocked fleet-telemetry feed standing in for Base's real data. Each one classifies what's happening, attempts an automated fix where one exists, and escalates to a human, routed to the owning team, only when judgment is needed. Philosophy: visibility first, page only when context calls for it. The foundation is `ercot-mcp`, an MCP server that exposes the ERCOT Public API as LLM tools.
-*(The one-line goal framing in `SESSION_HANDOFF.md` was drafted but never explicitly confirmed. Treat the wording above as a working pitch.)*
+*(The one-line goal framing in `docs/hackathon/SESSION_HANDOFF.md` was drafted but never explicitly confirmed. Treat the wording above as a working pitch.)*
 
-**Field RCA / auto-triage** (Megan, Sep 26): AI-assisted root-cause triage for faulted Cores and inverters, behind the L0–L4 permission ladder. Pipeline: fleet CSV → map → RCA ticket + telemetry packet → triage agent (root cause, then gameplan + level) → dashboard. See `ProjectContext.md`. It overlaps with signal 03 below.
+**Field RCA / auto-triage** (Megan, Sep 26): AI-assisted root-cause triage for faulted Cores and inverters, behind the L0–L4 permission ladder. Pipeline: fleet CSV → map → RCA ticket + telemetry packet → triage agent (root cause, then gameplan + level) → dashboard. See `docs/hackathon/PROJECT_CONTEXT.md`. It overlaps with signal 03 below.
 *(Open: is Field RCA now the headline product, with Issue Router as the ERCOT-context layer, or are they two submissions? Not decided in the repo.)*
 
 Tracks: **1 Open Grid Data + 2 Orchestration** (decided for Issue Router).
@@ -25,17 +25,17 @@ src/dashboard-server.ts  Issue Router dashboard + /api/status, /fleet, /case, ht
 src/pages/               Field RCA UI ported from the artifact mockups: fleet-dashboard.ts (/fleet), case-workspace.ts (/case). Static data for now
 src/mock-telemetry/      core-fleet-telemetry.json: 8 mock Cores bounded by real specs from Base's owner's manual (see its README). Not wired in yet
 public/base_logo.png     served at /base_logo.png
-ProjectContext.md        Field RCA source-of-truth index (Notion links, hard constraints, pipeline)
+docs/hackathon/PROJECT_CONTEXT.md  Field RCA source-of-truth index (Notion links, hard constraints, pipeline)
 docs/field-rca/          local copies of Notion 'Software features' (roles, permissions, feature set) and 'Software structure' (pipeline, CSV contract, Telemetry→Events detectors + Event schema). Read before building the RCA engine
 docs/field-rca/response-agent.md  Response Agent + Fake Fleet design (Carlos): action catalog, policy gate, sim behavior, /response page. Contracts in src/response/types.ts, seed in data/sim-fleet.seed.json
-README.md                setup: ERCOT key registration, .env, MCP config
-COLLABORATOR_GUIDE.md    teammate setup (each person needs their own ERCOT key)
-SESSION_HANDOFF.md       temporary context dump from a prior session (signals, numbers, sources). Read for detail; delete when obsolete
+README.md                portfolio overview of ARCA; ERCOT MCP setup is in docs/ercot-mcp.md
+docs/hackathon/COLLABORATOR_GUIDE.md teammate setup (each person needs their own ERCOT key)
+docs/hackathon/SESSION_HANDOFF.md temporary context dump from a prior session (signals, numbers, sources). Read for detail; delete when obsolete
 .env                     real ERCOT credentials. Gitignored. Never print or commit
 ```
 Commands: `npm install` · `npm run build` · `npm start` (MCP server) · `npm run dashboard` (build + serve dashboard) · `npm test` (tsc + node:test on dist/**/*.test.js).
 
-## Signals (details and real numbers in SESSION_HANDOFF.md)
+## Signals (details and real numbers in docs/hackathon/SESSION_HANDOFF.md)
 | Signal | Data | Status |
 |---|---|---|
 | 01 DAM–RTM Deviation | NP4-190-CD vs NP6-905-CD | live, real data |

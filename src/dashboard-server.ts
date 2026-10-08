@@ -31,7 +31,8 @@ const cityMapBuffers: Record<string, Buffer | null> = {
   austin: fs.existsSync(path.join(CITY_MAP_DIR, "austin.svg")) ? fs.readFileSync(path.join(CITY_MAP_DIR, "austin.svg")) : null,
 };
 
-const PORT = Number(process.env.DASHBOARD_PORT ?? 4173);
+// PORT is set by hosts like Render; DASHBOARD_PORT is the local override.
+const PORT = Number(process.env.PORT ?? process.env.DASHBOARD_PORT ?? 4173);
 
 function redirect(res: http.ServerResponse, location: string): void {
   res.writeHead(302, { Location: location });
