@@ -4,7 +4,7 @@ ARCA takes a faulted home battery from "something's wrong" to "fixed, and proven
 
 Built in 48 hours by a team of three at the **Base Power × AITX Talent Hackathon** (Austin, Sep 2026). Base engineers judged it.
 
-**Live demo:** _LIVE_URL_ (one-click demo login, no signup) · **Video:** [docs/demo/arca-demo.mp4](docs/demo/arca-demo.mp4)
+**Live demo:** [arca-demo.onrender.com](https://arca-demo.onrender.com) (one-click demo login; the free host may take ~30 s to wake up) · **Video:** [docs/demo/arca-demo.mp4](docs/demo/arca-demo.mp4)
 
 ![ARCA response agent: the policy gate denies a remote reboot on a safety case and the agent dispatches a technician instead](docs/demo/response-page.png)
 
@@ -52,7 +52,7 @@ All 7 extra truck rolls trace back to diagnosis, and the gate behaved as designe
 
 ## Try it
 
-**Hosted:** open the live demo and click **Ops staff view** or **Technician view**.
+**Hosted:** open [arca-demo.onrender.com](https://arca-demo.onrender.com) and click **Ops staff view** or **Technician view**.
 
 **Locally** (Node 20+, no API keys needed):
 

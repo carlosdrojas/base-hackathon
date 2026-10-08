@@ -79,6 +79,11 @@ Commands: `npm install` · `npm run build` · `npm start` (MCP server) · `npm r
 - Add a smoke test so "completes its core workflow without crashing" (15 pts) is demonstrable.
 - Record the 5-min demo video.
 
+**Portfolio publish** (Carlos, Oct 2026; fork github.com/carlosdrojas/base-hackathon, `main` = local `portfolio` branch)
+- Live: https://arca-demo.onrender.com (Render free tier via `render.yaml`, playbook planner, no API keys set). Smoke-tested: demo login, /fleet, /response, /api/response/state.
+- TODO: upload `docs/demo/arca-demo.mp4` to YouTube and replace the README video link (GitHub won't play a 27 MB in-repo mp4).
+- TODO (optional): swap the Base logo for a neutral ARCA wordmark; give teammates a heads-up about the public fork.
+
 ## Rules for agents
 - Never print, log or commit `.env` values.
 - Confirm ERCOT EMIL IDs and field names with a live call before using them.
