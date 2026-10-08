@@ -103,6 +103,7 @@ export async function handleResponseRoutes(req: http.IncomingMessage, res: http.
       return true;
     }
     if (method !== "POST") throw new HttpError(p === "/api/response/state" ? 405 : 404, `no route ${method} ${p}`);
+    if (p !== "/api/response/reset") noteActivity();
 
     const body = await readBody(req);
     switch (p) {
@@ -145,8 +146,7 @@ export async function handleResponseRoutes(req: http.IncomingMessage, res: http.
         return true;
       }
       case "/api/response/reset": {
-        await engine.reset();
-        await engine.ingestFaults();
+        await resetToSeed();
         send(res, 200, { ok: true });
         return true;
       }
@@ -163,6 +163,21 @@ export async function handleResponseRoutes(req: http.IncomingMessage, res: http.
   }
 }
 
+// Hosted demo: every visitor shares this one engine, so after DEMO_IDLE_RESET_MINUTES with no
+// writes, a changed fleet goes back to the seed for the next visitor. Unset = never (local dev).
+const IDLE_RESET_MS = Number(process.env.DEMO_IDLE_RESET_MINUTES ?? 0) * 60_000;
+let lastWriteAt: number | null = null; // null = untouched since the last reset
+
+function noteActivity(): void {
+  lastWriteAt = Date.now();
+}
+
+async function resetToSeed(): Promise<void> {
+  await engine.reset();
+  await engine.ingestFaults();
+  lastWriteAt = null;
+}
+
 let started = false;
 
 /** Ingest on startup, then tick every 2 s (design doc §11). */
@@ -173,4 +188,12 @@ export function startResponseEngine(): void {
   setInterval(() => {
     engine.tick().catch((err) => console.error("response engine tick failed:", err));
   }, TICK_MS);
+  if (IDLE_RESET_MS > 0) {
+    setInterval(() => {
+      if (lastWriteAt === null || Date.now() - lastWriteAt < IDLE_RESET_MS) return;
+      resetToSeed()
+        .then(() => console.log("demo idle reset: fleet and cases restored to seed"))
+        .catch((err) => console.error("demo idle reset failed:", err));
+    }, Math.min(60_000, IDLE_RESET_MS));
+  }
 }

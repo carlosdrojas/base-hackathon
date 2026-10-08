@@ -11,3 +11,6 @@ services:
     envVars:
       - key: NODE_VERSION
         value: "22"
+      # Shared demo state: restore the seed fleet after 30 idle minutes (src/response/routes.ts)
+      - key: DEMO_IDLE_RESET_MINUTES
+        value: "30"
