@@ -82,7 +82,7 @@ Commands: `npm install` · `npm run build` · `npm start` (MCP server) · `npm r
 **Portfolio publish** (Carlos, Oct 2026; fork github.com/carlosdrojas/base-hackathon, `main` = local `portfolio` branch)
 - Live: https://arca-demo.onrender.com (Render free tier via `render.yaml`, playbook planner, no API keys set). Smoke-tested: demo login, /fleet, /response, /api/response/state.
 - TODO: upload `docs/demo/arca-demo.mp4` to YouTube and replace the README video link (GitHub won't play a 27 MB in-repo mp4).
-- TODO (optional): swap the Base logo for a neutral ARCA wordmark; give teammates a heads-up about the public fork.
+- Decided: keep the Base logo (disclaimer on login page + README). TODO: give teammates a heads-up about the public fork. Full ARCA todo list: ~/Documents/Dev/Apply/projects/arca.md.
 
 ## Rules for agents
 - Never print, log or commit `.env` values.
